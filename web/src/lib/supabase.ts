@@ -1,15 +1,21 @@
-// Supabase shim — produção ready para 01/out
-// 1) Crie projeto em supabase.com
-// 2) Defina envs na Vercel: NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY
-// 3) Rode supabase/schema.sql
+import { createClient } from "@supabase/supabase-js";
 
-export const supabaseReady = !!(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+
+if (!url || !anon) {
+  console.warn("Supabase env faltando — defina NEXT_PUBLIC_SUPABASE_URL / ANON_KEY");
+}
+
+export const supabase = createClient(url, anon);
+
+export const supabaseReady = !!(url && anon);
 
 export function getSupabaseEnvStatus() {
   return {
     ready: supabaseReady,
     urlSet: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
     anonSet: !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-    nextSteps: supabaseReady ? "Conectado" : "Defina envs na Vercel e redeploy",
+    nextSteps: supabaseReady ? "Conectado jefgdxrthemyyrawaxnd" : "Defina envs na Vercel e redeploy",
   };
 }
