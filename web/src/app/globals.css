@@ -1,26 +1,71 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-display: var(--font-display);
+  --font-body: var(--font-body);
+  --color-neon: #00F0FF;
+  --color-violet: #8B5CF6;
+  --color-lime: #C6FF00;
+  --color-pink: #FF3B9A;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+:root {
+  --bg: #070A1A;
+  --bg2: #0F1233;
 }
+
+* { scrollbar-width: thin; scrollbar-color: #8B5CF6 transparent; }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg);
+  color: #EDEFFF;
+  font-family: var(--font-body), system-ui, sans-serif;
+  overflow-x: hidden;
 }
+
+/* mesh gradients */
+.mesh {
+  background:
+    radial-gradient(800px 400px at 15% 10%, rgba(139,92,246,0.35), transparent 60%),
+    radial-gradient(700px 500px at 85% 15%, rgba(0,240,255,0.25), transparent 60%),
+    radial-gradient(600px 600px at 50% 85%, rgba(255,59,154,0.18), transparent 60%),
+    linear-gradient(180deg, #070A1A 0%, #0B0F2A 100%);
+}
+
+.glass {
+  background: rgba(255,255,255,0.07);
+  backdrop-filter: blur(16px) saturate(1.2);
+  border: 1px solid rgba(255,255,255,0.12);
+}
+
+.glass-strong {
+  background: rgba(255,255,255,0.92);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(255,255,255,0.6);
+}
+
+.glow-violet { box-shadow: 0 0 40px rgba(139,92,246,0.45), 0 0 80px rgba(139,92,246,0.2); }
+.glow-cyan { box-shadow: 0 0 40px rgba(0,240,255,0.4), 0 0 80px rgba(0,240,255,0.18); }
+
+.grid-pattern {
+  background-image:
+    linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+.animate-float { animation: float 6s ease-in-out infinite; }
+.animate-float-delayed { animation: float 6s ease-in-out infinite 2s; }
+@keyframes float { 0%,100%{ transform: translateY(0)} 50%{ transform: translateY(-10px)} }
+
+.shimmer {
+  position: relative; overflow: hidden;
+}
+.shimmer::after {
+  content:""; position:absolute; inset:0;
+  background: linear-gradient(110deg, transparent 30%, rgba(255,255,255,0.18) 50%, transparent 70%);
+  transform: translateX(-100%); animation: shimmer 2.2s infinite;
+}
+@keyframes shimmer { 100%{ transform: translateX(100%)} }
+
+::selection { background: #8B5CF6; color: white; }
