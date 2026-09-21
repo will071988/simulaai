@@ -53,9 +53,9 @@ export default function Home() {
                 </span>
                 <h3 className="mt-3 text-lg font-semibold">{t.nome}</h3>
                 <p className="text-sm text-zinc-600">{t.detalhe}</p>
-                <button className="mt-4 w-full rounded-full border py-2 text-sm font-medium hover:bg-zinc-900 hover:text-white">
+                <a href="/simulados" className="mt-4 block w-full text-center rounded-full border py-2 text-sm font-medium hover:bg-zinc-900 hover:text-white">
                   Iniciar simulado grátis
-                </button>
+                </a>
               </div>
             ))}
           </div>
