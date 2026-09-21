@@ -12,7 +12,7 @@ export async function GET() {
   return NextResponse.json({
     ok: true,
     timestamp: new Date().toISOString(),
-    projeto: "jefgdxrthemyyrawaxnd (neurolink-cursos-prod)",
+    projeto: "ukwulespvvthyjqgrjfo (will071988's Project - cxqtcqiiwnfgpuxbhtre)",
     concursos: concursos?.length ?? 0,
     simulados: simulados?.length ?? 0,
     data: { concursos, simulados },
