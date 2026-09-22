@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Header, Footer } from "@/components/Header";
 import { trilhas } from "@/lib/mock";
+import { HotConcursosMap } from "@/components/HotConcursosMap";
 
 export default function Home() {
   return (
@@ -110,6 +111,17 @@ export default function Home() {
               </div>
             </Link>
           ))}
+        </div>
+      </section>
+
+      {/* MAPA CONCURSOS QUENTES */}
+      <section className="mx-auto max-w-6xl px-6 py-6">
+        <div className="glass rounded-[28px] p-6 sm:p-8">
+          <h2 className="font-display font-bold text-2xl">Mapa dos Concursos Quentes</h2>
+          <p className="text-sm text-white/60 mt-1">Concursos em alta pelo Brasil — dados do Supabase, hot_score determinístico.</p>
+          <div className="mt-6">
+            <HotConcursosMap />
+          </div>
         </div>
       </section>
 

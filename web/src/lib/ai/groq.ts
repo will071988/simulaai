@@ -9,7 +9,7 @@ export class GroqProvider implements AIProvider {
   model: string;
   private cb = new CircuitBreaker();
   constructor(model?: string) {
-    this.model = model || process.env.AI_GROQ_MODEL || "llama-3.1-8b-instant";
+    this.model = model || process.env.AI_GROQ_MODEL || "openai/gpt-oss-20b";
   }
   async healthCheck() {
     if (this.cb.isOpen()) return { healthy: false };

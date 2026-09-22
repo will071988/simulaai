@@ -4,54 +4,23 @@ import { safeFetch, hashContent, hashBuffer, extractPdfText } from "./http";
 import { generateWithFallback } from "@/lib/ai/router";
 import type { DiscoveredDocument } from "./types";
 import { isSafeUrl } from "./security";
-import { z } from "zod";
+import { ExtractConcursoSchema } from "./schemas";
+import { syncConcursoFromDocument } from "./syncConcurso";
 
 const MAX_AI_PER_RUN = Number(process.env.MAX_AI_REQUESTS_PER_RUN || 30);
 
-const ExtractSchema = z.object({
-  orgao: z.string().nullable().transform((v) => v?.slice(0, 100) || null),
-  banca: z.string().nullable().transform((v) => v?.slice(0, 50) || null),
-  vagas: z.number().nullable(),
-  status: z.string().nullable().transform((v) => v?.slice(0, 30) || null),
-  evidence: z.object({ orgao: z.string().optional(), banca: z.string().optional(), vagas: z.string().optional(), status: z.string().optional() }).optional(),
-});
-
-function normalizeOrgao(v: string | null): string | null {
-  if (!v) return null;
-  const m: Record<string, string> = { "POLICIA FEDERAL": "PF", "POLÍCIA FEDERAL": "PF", "PRF": "PRF", "PC-BA": "PC-BA" };
-  const up = v.trim().toUpperCase();
-  return m[up] || v.trim().slice(0, 80);
-}
-function normalizeBanca(v: string | null): string | null {
-  if (!v) return null;
-  const low = v.trim().toLowerCase();
-  if (low.includes("cebraspe")) return "Cebraspe";
-  if (low.includes("fgv")) return "FGV";
-  if (low.includes("aocp")) return "Instituto AOCP";
-  if (low.includes("cesgranrio")) return "Cesgranrio";
-  if (low.includes("fcc")) return "FCC";
-  return v.trim().slice(0, 50);
-}
-
-async function syncConcursoFromDocument(svc: ReturnType<typeof supabaseService>, doc: DiscoveredDocument, extracted: z.infer<typeof ExtractSchema>, tier: number) {
-  // tier2 não publica automaticamente como fato confirmado
-  if (tier === 2 && !extracted.orgao) return;
-  const orgao = normalizeOrgao(extracted.orgao);
-  const banca = normalizeBanca(extracted.banca);
-  if (!orgao || !banca) return;
-  const confidence = tier === 1 ? 0.95 : 0.7;
-  const { error } = await svc.from("concursos").upsert({ orgao, titulo: doc.title.slice(0, 200), banca, vagas: extracted.vagas, status: extracted.status || "previsto", edital_url: doc.canonicalUrl }, { onConflict: "edital_url" });
-  if (error) throw new Error(`syncConcurso upsert: ${error.message}`);
-  // store confidence in metadata later
-  return confidence;
-}
-
-export async function runCollector(): Promise<{ runId: string; status: string; stats: { sourcesChecked: number; documentsFound: number; documentsNew: number; documentsUpdated: number; aiPending: number } }> {
-  if (process.env.COLLECTOR_ENABLED === "false") return { runId: "", status: "DISABLED", stats: { sourcesChecked: 0, documentsFound: 0, documentsNew: 0, documentsUpdated: 0, aiPending: 0 } };
+export async function runCollector(externalRunId?: string): Promise<{ runId: string; status: string; stats: { sourcesChecked: number; documentsFound: number; documentsNew: number; documentsUpdated: number; aiPending: number } }> {
+  if (process.env.COLLECTOR_ENABLED === "false") return { runId: externalRunId || "", status: "DISABLED", stats: { sourcesChecked: 0, documentsFound: 0, documentsNew: 0, documentsUpdated: 0, aiPending: 0 } };
   const svc = supabaseService();
-  const { data: run, error: runErr } = await svc.from("collector_runs").insert({ status: "RUNNING" }).select("id").single();
-  if (runErr || !run?.id) throw new Error(`collector_runs insert failed: ${runErr?.message}`);
-  const runId = run.id as string;
+  let runId = externalRunId || "";
+  if (!runId) {
+    const { data: run, error: runErr } = await svc.from("collector_runs").insert({ status: "RUNNING" }).select("id").single();
+    if (runErr || !run?.id) throw new Error(`collector_runs insert failed: ${runErr?.message}`);
+    runId = run.id as string;
+  } else {
+    const { error: runErr } = await svc.from("collector_runs").insert({ id: runId, status: "RUNNING" });
+    if (runErr) throw new Error(`collector_runs insert failed: ${runErr.message}`);
+  }
   let sourcesChecked = 0, documentsFound = 0, documentsNew = 0, documentsUpdated = 0, aiPending = 0, aiProcessed = 0, errors = 0;
 
   try {
@@ -92,31 +61,35 @@ export async function runCollector(): Promise<{ runId: string; status: string; s
         if (!fetched.ok) { errors++; continue; }
         let raw = fetched.text || "";
         let contentHash: string;
+        let binaryHash: string | null = null;
+        let textHash: string | null = null;
         let docType = doc.documentType;
         if (fetched.buffer) {
-          // PDF pipeline
+          binaryHash = hashBuffer(fetched.buffer);
           const pdfRes = await extractPdfText(fetched.buffer);
           if (pdfRes.status === "PARSE_FAILED_NO_TEXT") {
-            // mark as OCR_REQUIRED
-            contentHash = hashBuffer(fetched.buffer);
+            contentHash = binaryHash;
+            textHash = null;
             if (existing && existing.content_hash === contentHash) continue;
             const metadata = { source_name: doc.sourceName, tier: doc.tier, document_type: "EDITAL_PDF", pdf_status: pdfRes.status };
             if (existing) {
               await svc.from("collector_document_versions").insert({ document_id: existing.id, content_hash: existing.content_hash, raw_text: existing.raw_text, metadata: existing.metadata });
-              const { error: updErr } = await svc.from("collector_documents").update({ content_hash: contentHash, raw_text: "", status: "FAILED", metadata, collected_at: new Date().toISOString() }).eq("id", existing.id);
+              const { error: updErr } = await svc.from("collector_documents").update({ content_hash: contentHash, binary_hash: binaryHash, text_hash: textHash, raw_text: "", status: "FAILED", metadata, collected_at: new Date().toISOString() }).eq("id", existing.id);
               if (updErr) errors++; else documentsUpdated++;
             } else {
               const sourceId = sourceMap.get(doc.sourceName)?.id;
-              const { error: insErr } = await svc.from("collector_documents").insert({ source_id: sourceId, source_url: doc.sourceUrl, canonical_url: doc.canonicalUrl, document_type: "EDITAL_PDF", title: doc.title, content_hash: contentHash, raw_text: "", status: "FAILED", metadata });
+              const { error: insErr } = await svc.from("collector_documents").insert({ source_id: sourceId, source_url: doc.sourceUrl, canonical_url: doc.canonicalUrl, document_type: "EDITAL_PDF", title: doc.title, content_hash: contentHash, binary_hash: binaryHash, text_hash: textHash, raw_text: "", status: "FAILED", metadata });
               if (insErr) errors++; else documentsNew++;
             }
             continue;
           }
           raw = pdfRes.text;
           docType = "EDITAL_PDF";
-          contentHash = hashContent(raw.slice(0, 50000));
+          textHash = hashContent(raw.slice(0, 50000));
+          contentHash = textHash;
         } else {
-          contentHash = hashContent(raw.slice(0, 50000));
+          textHash = hashContent(raw.slice(0, 50000));
+          contentHash = textHash;
         }
         if (existing && existing.content_hash === contentHash) continue;
 
@@ -133,16 +106,22 @@ export async function runCollector(): Promise<{ runId: string; status: string; s
             prompt: `Extraia concurso. Retorne JSON {orgao,banca,vagas,status,evidence:{orgao,banca,vagas,status}} com evidence trecho pequeno. Não invente. Se não houver, null. Prompt v1.`,
             input: { title: doc.title, snippet: raw.slice(0, 4000) },
             promptVersion: "extract_concurso_v1",
-          }, { validate: (d) => ExtractSchema.safeParse(d).success });
+          }, { validate: (d) => ExtractConcursoSchema.safeParse(d).success });
           if (aiRes.ok && aiRes.data) {
-            const parsed = ExtractSchema.safeParse(aiRes.data);
+            const parsed = ExtractConcursoSchema.safeParse(aiRes.data);
             if (parsed.success) {
               metadata.ai_extracted = parsed.data;
               metadata.ai_provider = aiRes.provider;
               metadata.ai_model = aiRes.model;
               status = "PROCESSED";
               aiProcessed++;
-              try { await syncConcursoFromDocument(svc, doc, parsed.data, doc.tier); } catch (e) { errors++; metadata.sync_error = e instanceof Error ? e.message : "ERR"; }
+              try { await syncConcursoFromDocument(svc, doc, parsed.data, doc.tier); } catch (e) {
+                errors++;
+                const msg = e instanceof Error ? e.message : "ERR";
+                metadata.sync_error = msg;
+                // don't mark PROCESSED if sync failed
+                if (msg.includes("upsert")) status = "AI_PENDING";
+              }
             } else {
               status = "AI_PENDING";
               aiPending++;
@@ -160,10 +139,9 @@ export async function runCollector(): Promise<{ runId: string; status: string; s
         }
 
         if (existing) {
-          // versioning: save old version
           const { error: verErr } = await svc.from("collector_document_versions").insert({ document_id: existing.id, content_hash: existing.content_hash, raw_text: existing.raw_text, metadata: existing.metadata });
           if (verErr) errors++;
-          const { error: updErr } = await svc.from("collector_documents").update({ content_hash: contentHash, raw_text: raw.slice(0, 20000), status, metadata, collected_at: new Date().toISOString() }).eq("id", existing.id);
+          const { error: updErr } = await svc.from("collector_documents").update({ content_hash: contentHash, binary_hash: binaryHash, text_hash: textHash, raw_text: raw.slice(0, 20000), status, metadata, collected_at: new Date().toISOString() }).eq("id", existing.id);
           if (updErr) errors++; else documentsUpdated++;
         } else {
           const sourceId = sourceMap.get(doc.sourceName)?.id;
@@ -174,6 +152,8 @@ export async function runCollector(): Promise<{ runId: string; status: string; s
             document_type: docType,
             title: doc.title,
             content_hash: contentHash,
+            binary_hash: binaryHash,
+            text_hash: textHash,
             raw_text: raw.slice(0, 20000),
             status,
             metadata,
