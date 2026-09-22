@@ -1,7 +1,8 @@
 node_modules/
 .next/
-.env.local
-.env
 dist/
-
-.vercel
+.vercel/
+.env
+.env.*
+!.env.example
+supabase/.temp/
