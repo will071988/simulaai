@@ -10,6 +10,7 @@ export function Header() {
           <span className="hidden sm:inline text-xs px-2 py-1 rounded-full bg-white/10 border border-white/15">BETA • até 01/out</span>
         </Link>
         <nav className="hidden md:flex items-center gap-6 text-sm text-white/80">
+          <Link href="/quiz" className="hover:text-white">Quiz</Link>
           <Link href="/simulados" className="hover:text-white">Simulados</Link>
           <Link href="/#radar" className="hover:text-white">Radar</Link>
           <Link href="/#planos" className="hover:text-white">Planos</Link>

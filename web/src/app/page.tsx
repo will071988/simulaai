@@ -33,7 +33,7 @@ export default function Home() {
               </p>
               <div className="mt-6 flex flex-wrap gap-3">
                 <Link href="/simulados" className="px-7 py-3.5 rounded-full bg-white text-black font-semibold hover:bg-zinc-100 transition glow-cyan">Fazer simulado grátis →</Link>
-                <Link href="#planos" className="px-7 py-3.5 rounded-full glass font-medium hover:bg-white/10 transition">Ver planos até R$29,90</Link>
+                <Link href="/quiz" className="px-7 py-3.5 rounded-full glass font-medium hover:bg-white/10 transition">Não sei qual concurso escolher</Link>
               </div>
               <div className="mt-6 flex items-center gap-6 text-sm">
                 <span className="flex -space-x-2"><span className="h-8 w-8 rounded-full bg-gradient-to-br from-violet-500 to-cyan-400 border-2 border-[#070A1A]" /><span className="h-8 w-8 rounded-full bg-gradient-to-br from-orange-400 to-pink-500 border-2 border-[#070A1A]" /><span className="h-8 w-8 rounded-full bg-gradient-to-br from-emerald-400 to-cyan-400 border-2 border-[#070A1A]" /></span>
@@ -84,6 +84,15 @@ export default function Home() {
       </section>
 
       {/* TRILHAS */}
+      <section className="mx-auto max-w-6xl px-6 pt-6">
+        <div className="glass rounded-[24px] p-5 flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h3 className="font-display font-bold">Não sabe qual escolher?</h3>
+            <p className="text-sm text-white/60">Faça o quiz e descubra quais concursos combinam mais com seu perfil.</p>
+          </div>
+          <Link href="/quiz" className="rounded-full bg-white text-black px-6 py-3 font-bold hover:bg-zinc-100 transition">Fazer quiz — 2 min →</Link>
+        </div>
+      </section>
       <section id="trilhas" className="mx-auto max-w-6xl px-6 py-10">
         <div className="flex items-end justify-between">
           <h2 className="font-display font-bold text-3xl">Trilhas quentes — set/2026</h2>

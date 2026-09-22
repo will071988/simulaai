@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/set-state-in-effect */
 "use client";
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
@@ -9,6 +10,11 @@ export default function SimuladoSlugPage({ params }: { params: Promise<{ slug: s
   const [respostas, setRespostas] = useState<Record<string, string>>({});
   const [tempo, setTempo] = useState(0);
   const [finalizado, setFinalizado] = useState(false);
+
+  const [isQuiz, setIsQuiz] = useState(false);
+  useEffect(() => {
+    setIsQuiz(new URLSearchParams(window.location.search).get("quiz") === "1");
+  }, []);
 
   useEffect(() => {
     if (finalizado || !simulado) return;
@@ -97,6 +103,9 @@ export default function SimuladoSlugPage({ params }: { params: Promise<{ slug: s
       </header>
 
       <main className="mx-auto max-w-3xl px-6 py-8">
+        {isQuiz && (
+          <div className="mb-4 rounded-2xl bg-emerald-500 text-white px-4 py-3 text-sm font-medium text-center">Recomendado com base no seu perfil. ✓</div>
+        )}
         <div className="glass rounded-3xl p-6">
           <h1 className="font-display font-bold text-2xl">{simulado.titulo}</h1>
           <p className="text-sm text-white/60">{simulado.banca} • {total} questões • {simulado.duracaoMin} min • cronometrado</p>

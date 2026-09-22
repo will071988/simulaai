@@ -16,6 +16,6 @@ export function getSupabaseEnvStatus() {
     ready: supabaseReady,
     urlSet: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
     anonSet: !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-    nextSteps: supabaseReady ? "Conectado jefgdxrthemyyrawaxnd" : "Defina envs na Vercel e redeploy",
+    nextSteps: supabaseReady ? "Conectado ukwulespvvthyjqgrjfo" : "Defina envs na Vercel e redeploy",
   };
 }

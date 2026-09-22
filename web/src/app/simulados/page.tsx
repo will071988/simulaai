@@ -14,6 +14,13 @@ export default function SimuladosPage() {
           </div>
           <span className="glass rounded-full px-4 py-2 text-xs">6 trilhas • coletor 06h • R$29,90</span>
         </div>
+        <div className="mt-6 glass rounded-[24px] p-5 flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <p className="text-sm font-bold">Está em dúvida?</p>
+            <p className="text-sm text-white/60">Descubra seu perfil em menos de 2 minutos.</p>
+          </div>
+          <Link href="/quiz" className="rounded-full bg-white text-black px-6 py-3 font-bold">Descobrir meu concurso →</Link>
+        </div>
 
         <div className="mt-8 grid md:grid-cols-2 lg:grid-cols-3 gap-4">
           {simulados.map((s) => (
