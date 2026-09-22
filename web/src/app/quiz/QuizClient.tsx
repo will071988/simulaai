@@ -9,19 +9,32 @@ import { perguntas, calculateQuizResult, perfilLabel, analyticsTrack } from "@/l
 
 type Step = "intro" | "questions" | "result";
 
+const QUIZ_VERSION = 1;
+
 export default function QuizClient() {
   const [step, setStep] = useState<Step>("intro");
   const [idx, setIdx] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string>>({});
-  const [sessionId] = useState<string>(() => {
+  const [sessionId, setSessionId] = useState<string>(() => {
     if (typeof window === "undefined") return "";
     const existing = localStorage.getItem("simulaai_quiz_session");
-    if (existing) return existing;
+    const ver = localStorage.getItem("simulaai_quiz_version");
+    if (existing && ver === String(QUIZ_VERSION)) return existing;
+    // version mismatch → new session
     const sid = crypto.randomUUID();
     localStorage.setItem("simulaai_quiz_session", sid);
+    localStorage.setItem("simulaai_quiz_version", String(QUIZ_VERSION));
+    // clear stale answers
+    if (ver !== String(QUIZ_VERSION)) {
+      localStorage.removeItem("simulaai_quiz_answers");
+      localStorage.removeItem("simulaai_quiz_step");
+      localStorage.removeItem("simulaai_quiz_idx");
+    }
     return sid;
   });
   useEffect(() => {
+    const ver = localStorage.getItem("simulaai_quiz_version");
+    if (ver !== String(QUIZ_VERSION)) return;
     const saved = localStorage.getItem("simulaai_quiz_answers");
     const savedStep = localStorage.getItem("simulaai_quiz_step") as Step | null;
     const savedIdx = localStorage.getItem("simulaai_quiz_idx");
@@ -32,6 +45,7 @@ export default function QuizClient() {
 
   useEffect(() => {
     localStorage.setItem("simulaai_quiz_answers", JSON.stringify(answers));
+    localStorage.setItem("simulaai_quiz_version", String(QUIZ_VERSION));
   }, [answers]);
   useEffect(() => { localStorage.setItem("simulaai_quiz_step", step); }, [step]);
   useEffect(() => { localStorage.setItem("simulaai_quiz_idx", String(idx)); }, [idx]);
@@ -196,9 +210,13 @@ export default function QuizClient() {
         <div className="mt-6 flex flex-wrap gap-3 justify-center">
           <button
             onClick={() => {
+              const newSid = crypto.randomUUID();
+              localStorage.setItem("simulaai_quiz_session", newSid);
+              setSessionId(newSid);
               localStorage.removeItem("simulaai_quiz_answers");
               localStorage.removeItem("simulaai_quiz_step");
               localStorage.removeItem("simulaai_quiz_idx");
+              localStorage.setItem("simulaai_quiz_version", String(QUIZ_VERSION));
               setAnswers({});
               setIdx(0);
               setStep("intro");

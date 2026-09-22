@@ -113,9 +113,10 @@ export const perguntas: QuizQuestion[] = [
 ];
 
 // Mapeamento concurso -> perfil weights (forte característica)
+// Ajustado para desempate PF (investigação) vs PRF (trânsito/fiscalização)
 export const concursoPerfilPesos: Record<string, Partial<Record<Perfil, number>>> = {
-  "pf-cebraspe-01": { SEGURANCA: 3, ADMINISTRATIVO: 1, TECNOLOGIA: 1 },
-  "prf-cebraspe-01": { SEGURANCA: 3, TECNICO_OPERACIONAL: 2 },
+  "pf-cebraspe-01": { SEGURANCA: 3, ADMINISTRATIVO: 2, TECNOLOGIA: 1 },
+  "prf-cebraspe-01": { SEGURANCA: 3, TECNICO_OPERACIONAL: 3 },
   "pcba-aocp-01": { SEGURANCA: 3, ADMINISTRATIVO: 1 },
   "bacen-cesgranrio-01": { FINANCEIRO: 3, ADMINISTRATIVO: 2 },
   "inss-fgv-01": { ATENDIMENTO_SOCIAL: 3, ADMINISTRATIVO: 2 },
