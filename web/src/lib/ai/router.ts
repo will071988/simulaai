@@ -5,13 +5,7 @@ import { GeminiProvider } from "./gemini";
 import { OpenRouterProvider } from "./openrouter";
 import { supabaseService } from "@/lib/supabase-server";
 import crypto from "crypto";
-
-function freeOnly() { return process.env.FREE_AI_ONLY !== "false"; }
-
-function order(): string[] {
-  const raw = process.env.AI_PROVIDER_ORDER || "groq,gemini,openrouter";
-  return raw.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
-}
+import { aiConfig, isModelAllowed } from "./config";
 
 function providers(): Record<string, AIProvider> {
   return {
@@ -49,28 +43,37 @@ async function logUsage(provider: string, model: string, taskType: string, succe
   } catch {}
 }
 
-function budgetExceeded(): boolean {
-  // lightweight: check per-run limit via env, per-day via count in db (best effort)
-  return false;
+async function budgetExceeded(): Promise<boolean> {
+  const maxDay = aiConfig.maxPerDay;
+  if (!maxDay || maxDay <= 0) return false;
+  try {
+    const svc = supabaseService();
+    const since = new Date();
+    since.setUTCHours(0, 0, 0, 0);
+    const { count } = await svc.from("ai_usage_logs").select("id", { count: "exact", head: true }).gte("created_at", since.toISOString());
+    return (count || 0) >= maxDay;
+  } catch { return false; }
 }
 
 export async function generateWithFallback<T>(req: AIRequest, opts?: { validate?: (d: unknown) => boolean }): Promise<AIResult<T> & { degraded?: boolean }> {
   if (process.env.COLLECTOR_ENABLED === "false") return { ok: false, provider: "disabled", model: "", latencyMs: 0, errorCode: "COLLECTOR_DISABLED", degraded: true };
   if (process.env.AI_ENABLED === "false") return { ok: false, provider: "disabled", model: "", latencyMs: 0, errorCode: "AI_DISABLED", degraded: true };
-  if (budgetExceeded()) return { ok: false, provider: "budget", model: "", latencyMs: 0, errorCode: "BUDGET_EXCEEDED", degraded: true };
+  if (await budgetExceeded()) return { ok: false, provider: "budget", model: "", latencyMs: 0, errorCode: "BUDGET_EXCEEDED", degraded: true };
 
   const inputHash = hashInput(req.input, req.promptVersion, req.taskType);
   const cached = await getCached<T>(inputHash, req.promptVersion);
   if (cached) return { ok: true, provider: "cache", model: "cache", data: cached, latencyMs: 0, cached: true };
 
-  const ord = order();
+  const ord = aiConfig.providerOrder;
   const map = providers();
-  const freeOnlyFlag = freeOnly();
 
   for (const name of ord) {
     const p = map[name];
     if (!p) continue;
-    // FREE_AI_ONLY guard: providers already are free, but skip if no key
+    if (aiConfig.freeOnly && !isModelAllowed(p.model)) {
+      await logUsage(p.name, p.model, req.taskType, false, 0, "PAID_MODEL_BLOCKED");
+      continue;
+    }
     const health = await p.healthCheck();
     if (!health.healthy) continue;
     // single retry with backoff for 429
@@ -92,7 +95,7 @@ export async function generateWithFallback<T>(req: AIRequest, opts?: { validate?
         attempt++;
         continue;
       }
-      if (res.errorCode === "MODEL_NOT_FOUND" && freeOnlyFlag) {
+      if (res.errorCode === "MODEL_NOT_FOUND") {
         break; // try next provider/model
       }
       break;

@@ -4,7 +4,7 @@ export type DiscoveredDocument = {
   sourceUrl: string;
   canonicalUrl: string;
   title: string;
-  documentType: "EDITAL" | "NOTICE" | "PDF_PROVA" | "PDF_GABARITO" | "HTML";
+  documentType: "EDITAL" | "NOTICE" | "PDF_PROVA" | "PDF_GABARITO" | "HTML" | "EDITAL_PDF";
   publishedAt?: string;
   tier: number;
 };

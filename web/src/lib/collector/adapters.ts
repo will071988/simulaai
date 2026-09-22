@@ -1,5 +1,6 @@
 import type { DiscoveredDocument } from "./types";
 import { safeFetch, checkRobots } from "./http";
+import * as cheerio from "cheerio";
 
 export interface CollectorSourceAdapter {
   sourceName: string;
@@ -8,83 +9,135 @@ export interface CollectorSourceAdapter {
   discover(): Promise<DiscoveredDocument[]>;
 }
 
-// Cebraspe: discover via homepage scraping (deterministic parsing, no IA)
+function toAbs(base: string, href: string): string | null {
+  try { return new URL(href, base).toString(); } catch { return null; }
+}
+
 export class CebraspeAdapter implements CollectorSourceAdapter {
   sourceName = "Cebraspe";
   baseUrl = "https://www.cebraspe.org.br";
   tier = 1;
   async discover(): Promise<DiscoveredDocument[]> {
-    const allowed = await checkRobots(this.baseUrl, "/concursos");
-    if (!allowed) return [];
+    const robots = await checkRobots(this.baseUrl, "/concursos");
+    if (!robots.allowed) return [];
     const res = await safeFetch(this.baseUrl + "/concursos", { allowedTypes: ["text/html"], timeoutMs: 10000 });
     if (!res.ok || !res.text) return [];
-    // deterministic: extract links containing /concursos/ + PF/PRF keywords
+    const $ = cheerio.load(res.text);
     const docs: DiscoveredDocument[] = [];
-    const re = /href="(\/concursos\/[^"]+)"[^>]*>([^<]{5,120})/gi;
-    let m: RegExpExecArray | null;
     const seen = new Set<string>();
-    while ((m = re.exec(res.text)) && docs.length < 10) {
-      const path = m[1];
-      const title = m[2].trim().replace(/\s+/g, " ");
-      const url = new URL(path, this.baseUrl).toString();
-      if (seen.has(url)) continue;
+    $("a").each((_, el) => {
+      if (docs.length >= 12) return false;
+      const href = $(el).attr("href");
+      if (!href) return;
+      const url = toAbs(this.baseUrl, href);
+      if (!url || !url.includes("/concursos/") || seen.has(url)) return;
       seen.add(url);
-      if (!/pf|prf|policia|inss|bacen|transpetro/i.test(title) && !/pf|prf/i.test(path)) continue;
-      docs.push({
-        sourceName: this.sourceName,
-        sourceUrl: url,
-        canonicalUrl: url,
-        title: title.slice(0, 200),
-        documentType: "HTML",
-        tier: this.tier,
-        sourceId: "",
-      });
-    }
+      const title = $(el).text().trim().replace(/\s+/g, " ").slice(0, 200) || $(el).attr("title") || url;
+      // generic discovery: any concurso, not filtered by known keywords
+      docs.push({ sourceName: this.sourceName, sourceUrl: url, canonicalUrl: url, title, documentType: "HTML", tier: this.tier, sourceId: "" });
+    });
     return docs;
   }
 }
 
-// DOU: simple RSS/HTML discovery (Tier 1)
-// For MVP, fetch DOU concursos page (if reachable) or fallback to mock discovery that still persists provenience
 export class DOUAdapter implements CollectorSourceAdapter {
   sourceName = "DOU";
   baseUrl = "https://www.in.gov.br";
   tier = 1;
   async discover(): Promise<DiscoveredDocument[]> {
+    const robots = await checkRobots(this.baseUrl, "/web/dou");
+    if (!robots.allowed) return [];
     const res = await safeFetch(this.baseUrl + "/web/dou/-/concurso", { allowedTypes: ["text/html"], timeoutMs: 8000 });
-    // Even if fetch fails, we still return empty but collector continues (DEGRADED_NO_AI handling)
     if (!res.ok || !res.text) return [];
+    const $ = cheerio.load(res.text);
     const docs: DiscoveredDocument[] = [];
-    const re = /href="(\/web\/dou[^"]+)"[^>]*>([^<]{10,150})/gi;
-    let m: RegExpExecArray | null;
-    let count = 0;
-    while ((m = re.exec(res.text)) && count < 5) {
-      const url = new URL(m[1], this.baseUrl).toString();
-      docs.push({ sourceName: this.sourceName, sourceUrl: url, canonicalUrl: url, title: m[2].trim().slice(0, 200), documentType: "HTML", tier: 1, sourceId: "" });
-      count++;
-    }
+    $("a").each((_, el) => {
+      if (docs.length >= 6) return false;
+      const href = $(el).attr("href");
+      if (!href || !href.includes("/web/dou")) return;
+      const url = toAbs(this.baseUrl, href);
+      if (!url) return;
+      const title = $(el).text().trim().slice(0, 200);
+      if (!title || title.length < 8) return;
+      docs.push({ sourceName: this.sourceName, sourceUrl: url, canonicalUrl: url, title, documentType: "HTML", tier: 1, sourceId: "" });
+    });
     return docs;
   }
 }
 
-// PCI Concursos Tier2 discovery
 export class PCIAdapter implements CollectorSourceAdapter {
   sourceName = "PCI Concursos";
   baseUrl = "https://www.pciconcursos.com.br";
   tier = 2;
   async discover(): Promise<DiscoveredDocument[]> {
-    const allowed = await checkRobots(this.baseUrl, "/");
-    if (!allowed) return [];
+    const robots = await checkRobots(this.baseUrl, "/");
+    if (!robots.allowed) return [];
     const res = await safeFetch(this.baseUrl + "/concursos", { allowedTypes: ["text/html"], timeoutMs: 8000 });
     if (!res.ok || !res.text) return [];
+    const $ = cheerio.load(res.text);
     const docs: DiscoveredDocument[] = [];
-    const re = /href="(https:\/\/www\.pciconcursos\.com\.br\/[^"]+)"[^>]*>([^<]{10,120})/gi;
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(res.text)) && docs.length < 5) {
-      docs.push({ sourceName: this.sourceName, sourceUrl: m[1], canonicalUrl: m[1], title: m[2].trim().slice(0, 200), documentType: "HTML", tier: 2, sourceId: "" });
-    }
+    $("a").each((_, el) => {
+      if (docs.length >= 6) return false;
+      const href = $(el).attr("href");
+      if (!href) return;
+      const url = toAbs(this.baseUrl, href);
+      if (!url || !url.includes("pciconcursos.com.br")) return;
+      const title = $(el).text().trim().slice(0, 200);
+      if (title.length < 10) return;
+      docs.push({ sourceName: this.sourceName, sourceUrl: url, canonicalUrl: url, title, documentType: "HTML", tier: 2, sourceId: "" });
+    });
     return docs;
   }
 }
 
-export const adapters: CollectorSourceAdapter[] = [new CebraspeAdapter(), new DOUAdapter(), new PCIAdapter()];
+export class FGVAdapter implements CollectorSourceAdapter {
+  sourceName = "FGV";
+  baseUrl = "https://conhecimento.fgv.br";
+  tier = 1;
+  async discover(): Promise<DiscoveredDocument[]> {
+    const robots = await checkRobots(this.baseUrl, "/concursos");
+    if (!robots.allowed) return [];
+    const res = await safeFetch(this.baseUrl + "/concursos", { allowedTypes: ["text/html"], timeoutMs: 10000 });
+    if (!res.ok || !res.text) return [];
+    const $ = cheerio.load(res.text);
+    const docs: DiscoveredDocument[] = [];
+    $("a").each((_, el) => {
+      if (docs.length >= 8) return false;
+      const href = $(el).attr("href");
+      if (!href) return;
+      const url = toAbs(this.baseUrl, href);
+      if (!url || (!url.includes("/concursos") && !url.includes("fgv.br"))) return;
+      const title = $(el).text().trim().slice(0, 200);
+      if (title.length < 8) return;
+      docs.push({ sourceName: this.sourceName, sourceUrl: url, canonicalUrl: url, title, documentType: "HTML", tier: 1, sourceId: "" });
+    });
+    return docs;
+  }
+}
+
+export class AOCPAdapter implements CollectorSourceAdapter {
+  sourceName = "Instituto AOCP";
+  baseUrl = "https://www.institutoaocp.org.br";
+  tier = 1;
+  async discover(): Promise<DiscoveredDocument[]> {
+    const robots = await checkRobots(this.baseUrl, "/");
+    if (!robots.allowed) return [];
+    const res = await safeFetch(this.baseUrl, { allowedTypes: ["text/html"], timeoutMs: 10000 });
+    if (!res.ok || !res.text) return [];
+    const $ = cheerio.load(res.text);
+    const docs: DiscoveredDocument[] = [];
+    $("a").each((_, el) => {
+      if (docs.length >= 8) return false;
+      const href = $(el).attr("href");
+      if (!href) return;
+      const url = toAbs(this.baseUrl, href);
+      if (!url || !url.includes("institutoaocp.org.br")) return;
+      const title = $(el).text().trim().slice(0, 200);
+      if (title.length < 8) return;
+      docs.push({ sourceName: this.sourceName, sourceUrl: url, canonicalUrl: url, title, documentType: "HTML", tier: 1, sourceId: "" });
+    });
+    return docs;
+  }
+}
+
+export const adapters: CollectorSourceAdapter[] = [new CebraspeAdapter(), new DOUAdapter(), new PCIAdapter(), new FGVAdapter(), new AOCPAdapter()];
