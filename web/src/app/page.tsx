@@ -176,7 +176,7 @@ export default function Home() {
           <div className="glass rounded-[24px] p-6">
             <h3 className="font-bold">Avulso Final</h3><p className="text-3xl font-black mt-2">R$14,90</p><p className="text-sm text-white/60">Simulado Premium pré-edital</p>
             <ul className="mt-4 text-sm space-y-2 text-white/80"><li>✓ No estilo exato da banca</li><li>✓ Gabarito comentado</li><li>✓ Vira crédito p/ assinatura</li></ul>
-            <Link href="/simulados" className="mt-6 block text-center rounded-full bg-white text-black py-3 font-medium">Comprar avulso</Link>
+             <Link href="/simulados" className="mt-6 block text-center rounded-full bg-white text-black py-3 font-medium">Conhecer opção avulsa</Link>
           </div>
         </div>
       </section>

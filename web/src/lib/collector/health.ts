@@ -6,6 +6,7 @@ type HealthInput = {
 };
 
 export function deriveCollectorHealth(input: HealthInput): "HEALTHY" | "DEGRADED" | "FAILED" {
+  if (!input.lastRun) return "DEGRADED";
   if (input.lastRun?.status === "FAILED" || (input.sourcesHealthy === 0 && input.sourcesDegraded > 0)) return "FAILED";
   if (input.pendingAI > 0 || input.sourcesDegraded > 0 || input.lastRun?.status === "DEGRADED_NO_AI") return "DEGRADED";
   return "HEALTHY";

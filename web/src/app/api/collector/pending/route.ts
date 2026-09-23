@@ -38,7 +38,7 @@ async function handlePending() {
         continue;
       }
       const syncErr = await (async () => {
-        try { await syncConcursoFromDocument(svc, { sourceId: "", sourceName: String(meta.source_name || "pending"), sourceUrl: d.source_url || d.canonical_url || "", canonicalUrl: d.canonical_url || "", title: d.title || "", documentType: "HTML", tier, rawText: d.raw_text || "" } as never, parsed.data, tier); return null; } catch (e) { return e instanceof Error ? e.message : "ERR"; }
+        try { await syncConcursoFromDocument(svc, { sourceName: String(meta.source_name || "pending"), canonicalUrl: d.canonical_url || "", title: d.title || "", rawText: d.raw_text || "", documentId: d.id }, parsed.data, tier); return null; } catch (e) { return e instanceof Error ? e.message : "ERR"; }
       })();
       if (syncErr) {
         await svc.from("collector_documents").update({ ai_retry_count: retry + 1, metadata: { ...meta, ai_extracted: parsed.data, ai_provider: res.provider, sync_error: syncErr } }).eq("id", d.id);
