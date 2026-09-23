@@ -22,6 +22,8 @@ import { calcHotScoreWithReasons } from "./hotScore";
 import { enrichDocument, valueHash, type Evidence } from "./enrichment";
 import { resolveField } from "./fieldResolver";
 import { extractIdentitySignals, scoreEntity, stableEntityKey, type ContestIdentity } from "./entityResolution";
+import { aliasesFromIdentity, aliasesFromText, findAliasCandidates, persistIdentityAliases, type IdentityAlias } from "./identityAliases";
+import { classifyDocumentRelationship, type DocumentRelationship } from "./documentRelationship";
 
 type Location = { scope: string | null; state_code: string | null; city: string | null; latitude: number | null; longitude: number | null; label: string | null; confidence: number };
 type ContestRow = { id: string; orgao: string; banca: string | null; titulo: string; cargos?: string[] | null; escolaridade?: string[] | null; edital_number?: string | null; process_number?: string | null; official_slug?: string | null; official_source?: string | null; cargo_key?: string | null; cargo_group_key?: string | null; [key: string]: unknown };
@@ -50,7 +52,7 @@ export function resolveLocation(orgao: string, title: string): Location {
 
 export async function syncConcursoFromDocument(
   svc: SupabaseClient,
-  doc: { title: string; canonicalUrl: string; sourceName?: string; rawText?: string; documentId?: string | null },
+  doc: { title: string; canonicalUrl: string; sourceName?: string; rawText?: string; documentId?: string | null; documentType?: string; publishedAt?: string },
   extracted: ExtractConcurso,
   tier: number
 ): Promise<number | null> {
@@ -63,13 +65,25 @@ export async function syncConcursoFromDocument(
   const values = { vagas: deterministic.vagas ?? extracted.vagas, salario: deterministic.salario ?? extracted.salario ?? null, prova_data: deterministic.prova_data ?? extracted.prova_data ?? null, inscricao_inicio: deterministic.inscricao_inicio, inscricao_fim: deterministic.inscricao_fim, cadastro_reserva: deterministic.cadastro_reserva, cargos: deterministic.cargos, escolaridade: deterministic.escolaridade };
   const hot = calcHotScoreWithReasons({ status: extracted.status, vagas: values.vagas, salario: values.salario, prova_data: values.prova_data, inscricao_inicio: values.inscricao_inicio, inscricao_fim: values.inscricao_fim, tier });
   const identity = extractIdentitySignals({ title: doc.title, url: doc.canonicalUrl, rawText: doc.rawText, sourceName: doc.sourceName, orgao, banca, cargos: values.cargos, escolaridade: values.escolaridade });
+  const incomingAliases = [...aliasesFromIdentity(identity, doc.sourceName, doc.canonicalUrl), ...aliasesFromText(`${doc.title}\n${doc.rawText || ""}`, doc.sourceName, doc.canonicalUrl)];
   const key = stableEntityKey(identity);
   let possibleDuplicate: { id: string; score: number; reason: string; hardConflicts: string[] } | null = null;
-  let { data: matched } = key ? await svc.from("concursos").select("id,orgao,banca,titulo,vagas,salario,prova_data,inscricao_inicio,inscricao_fim,cadastro_reserva,cargos,escolaridade,status,scope,state_code,city,edital_number,process_number,official_slug,official_source,cargo_key,cargo_group_key").eq("logical_key", key).maybeSingle() : { data: null };
+  const selectContest = "id,orgao,banca,titulo,vagas,salario,prova_data,inscricao_inicio,inscricao_fim,cadastro_reserva,cargos,escolaridade,status,scope,state_code,city,edital_number,process_number,official_slug,official_source,cargo_key,cargo_group_key";
+  const aliasRows = await findAliasCandidates(svc, incomingAliases);
+  const aliasContestIds = [...new Set(aliasRows.map((alias) => alias.concurso_id))];
+  let aliasCandidate: ContestRow | null = null;
+  if (aliasContestIds.length === 1) {
+    const { data } = await svc.from("concursos").select(selectContest).eq("id", aliasContestIds[0]).maybeSingle();
+    aliasCandidate = data as ContestRow | null;
+  }
+  const candidateAliases: IdentityAlias[] = aliasRows.map((alias) => ({ ...alias, source_name: "" }));
+  let relationship = classifyDocumentRelationship({ title: doc.title, rawText: doc.rawText, incoming: identity, candidate: aliasCandidate ? candidateToIdentity(aliasCandidate) : null, candidateAliases });
+  let { data: matched } = aliasCandidate && relationship.relationship !== "NEW_CONTEST" && relationship.confidence >= 0.9 ? { data: aliasCandidate } : key ? await svc.from("concursos").select(selectContest).eq("logical_key", key).maybeSingle() : { data: null };
+  if (matched && !aliasCandidate) relationship = classifyDocumentRelationship({ title: doc.title, rawText: doc.rawText, incoming: identity, candidate: candidateToIdentity(matched), candidateAliases });
   if (!matched) {
-    const { data: candidates } = await svc.from("concursos").select("id,orgao,banca,titulo,vagas,salario,prova_data,inscricao_inicio,inscricao_fim,cadastro_reserva,cargos,escolaridade,status,scope,state_code,city,edital_number,process_number,official_slug,official_source,cargo_key,cargo_group_key").limit(200);
+    const { data: candidates } = await svc.from("concursos").select(selectContest).limit(200);
     const scored = (candidates || []).map((candidate) => ({ candidate, resolution: scoreEntity(candidateToIdentity(candidate), identity) })).sort((a, b) => b.resolution.score - a.resolution.score)[0];
-    if (scored?.resolution.decision === "AUTO_MATCH") matched = scored.candidate;
+    if (scored?.resolution.decision === "AUTO_MATCH") { matched = scored.candidate; relationship = classifyDocumentRelationship({ title: doc.title, rawText: doc.rawText, incoming: identity, candidate: candidateToIdentity(scored.candidate) }); }
     else if (scored?.resolution.decision === "POSSIBLE_DUPLICATE") {
       // Keep a separate entity; the pair is recorded after insertion below.
       possibleDuplicate = { id: scored.candidate.id, score: scored.resolution.score, reason: scored.resolution.reason, hardConflicts: scored.resolution.hardConflicts };
@@ -79,13 +93,18 @@ export async function syncConcursoFromDocument(
   let conflicted = false;
   if (matched) for (const [field, value] of Object.entries(incoming)) {
     const { data: evidence } = await svc.from("concurso_field_evidence").select("value_json,source_tier,observed_at,source_url,evidence_text").eq("concurso_id", matched.id).eq("field_name", field);
-    const decision = resolveField((matched as Record<string, unknown>)[field], value, { tier, observedAt: new Date().toISOString(), isAmendment: /retifica|altera[cç][aã]o|comunicado/i.test(`${doc.title} ${doc.rawText || ""}`) }, evidence || []);
+    const isAmendment = relationship.relationship === "RETIFICATION" || relationship.relationship === "REPUBLICATION" || relationship.relationship === "REOPENING";
+    const decision = resolveField((matched as Record<string, unknown>)[field], value, { tier, observedAt: new Date().toISOString(), isAmendment }, evidence || []);
     incoming[field] = decision.resolvedValue;
-    conflicted ||= decision.conflict;
+    conflicted ||= decision.conflict && !(tier === 1 && isAmendment && decision.decision === "ACCEPT_NEW");
   }
   const payload = { ...incoming, edital_url: doc.canonicalUrl, latitude: loc.latitude, longitude: loc.longitude, location_label: loc.label, logical_key: key || `TEMP:${valueHash(doc.canonicalUrl)}`, edital_number: identity.editalNumber, process_number: identity.processNumber, official_slug: identity.officialSlug, official_source: identity.officialSource, cargo_key: identity.cargoKey, cargo_group_key: identity.cargoGroupKey, hot_score: hot.score, hot_reasons: hot.reasons, updated_at: new Date().toISOString(), quality_status: conflicted ? "CONFLICTED" : tier === 1 && deterministic.evidence.length >= 3 ? "VERIFIED" : "PARTIAL" };
   const result = matched?.id ? await svc.from("concursos").update(payload).eq("id", matched.id).select("id").single() : await svc.from("concursos").upsert(payload, { onConflict: "edital_url" }).select("id").single();
   if (result.error || !result.data) throw new Error(`syncConcurso upsert: ${result.error?.message}`);
+  const persistedRelationship: DocumentRelationship = matched ? relationship.relationship : "ORIGINAL";
+  console.info(JSON.stringify({ event: "relationship_detected", relationship: persistedRelationship, confidence: relationship.confidence, reasons: relationship.reasons, hardConflicts: relationship.hardConflicts }));
+  await persistIdentityAliases(svc, result.data.id, incomingAliases);
+  if (doc.documentId) await svc.from("concurso_documents").upsert({ concurso_id: result.data.id, collector_document_id: doc.documentId, document_type: doc.documentType || null, relationship_type: persistedRelationship, source_url: doc.canonicalUrl, source_name: doc.sourceName || null, published_at: doc.publishedAt || null, is_current: true }, { onConflict: "collector_document_id" });
   if (possibleDuplicate && possibleDuplicate.id !== result.data.id) await svc.from("concurso_duplicate_candidates").upsert({ concurso_a_id: possibleDuplicate.id, concurso_b_id: result.data.id, score: possibleDuplicate.score, reason: possibleDuplicate.reason, hard_conflicts: possibleDuplicate.hardConflicts, identity_signals: identity, status: "POSSIBLE_DUPLICATE" }, { onConflict: "concurso_a_id,concurso_b_id" });
   const evidence: Evidence[] = [
     { field: "orgao", value: orgao, evidence: doc.title, confidence: 0.75 },
@@ -102,7 +121,7 @@ export async function syncConcursoFromDocument(
       if (oldValue == null || nextValue == null || JSON.stringify(oldValue) === JSON.stringify(nextValue)) continue;
       const { data: prior } = await svc.from("concurso_field_evidence").select("source_tier,value_json").eq("concurso_id", result.data.id).eq("field_name", field).order("source_tier", { ascending: true }).limit(1).maybeSingle();
       if (prior && prior.source_tier === tier && JSON.stringify(prior.value_json) !== JSON.stringify(nextValue)) conflicted = true;
-      await svc.from("concurso_changes").insert({ concurso_id: result.data.id, field_name: field, old_value: oldValue, new_value: nextValue, source_url: doc.canonicalUrl });
+      await svc.from("concurso_changes").insert({ concurso_id: result.data.id, field_name: field, old_value: oldValue, new_value: nextValue, source_url: doc.canonicalUrl, relationship_type: persistedRelationship });
     }
     if (conflicted) await svc.from("concursos").update({ quality_status: "CONFLICTED" }).eq("id", result.data.id);
   }

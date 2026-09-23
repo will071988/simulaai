@@ -1,3 +1,5 @@
+import { normalizeBaseEditalNumber } from "./identityAliases";
+
 const aliases: Record<string, string> = { "INSTITUTO BRASILEIRO DO MEIO AMBIENTE": "IBAMA", "POLICIA FEDERAL": "PF", "POLÍCIA FEDERAL": "PF", "PREFEITURA MUNICIPAL DO SALVADOR": "PREFEITURA_SALVADOR", "PREFEITURA DE SALVADOR": "PREFEITURA_SALVADOR" };
 const clean = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/[^A-Z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
 export const normalizeOrganization = (value: string) => aliases[clean(value)] || clean(value);
@@ -22,7 +24,7 @@ function extractGroup(text: string, escolaridade?: string[] | null) {
 
 export function extractIdentitySignals(input: IdentitySignalsInput): ContestIdentity {
   const text = `${input.title}\n${input.rawText || ""}`;
-  const edital = text.match(/EDITAL(?:\s+(?:N[ºO]\.?|NUMERO))?\s*([A-Z-]*\s*\d{1,3}\/20\d{2})/i)?.[1]?.replace(/\s+/g, "").toUpperCase() || null;
+  const edital = normalizeBaseEditalNumber(text);
   const process = text.match(/PROCESSO(?:\s+SELETIVO|\s+ADMINISTRATIVO)?\s*(?:N[ºO]\.?|NUMERO)?\s*([\d.]+\/20\d{2})/i)?.[1]?.replace(/\s+/g, "") || null;
   const slug = new URL(input.url).pathname.match(/\/concursos\/([^/?#]+)/i)?.[1]?.toLowerCase() || null;
   const cargos = input.cargos?.map(normalizeCargo).filter((value): value is string => value !== null && !/^NIVEL_(MEDIO|SUPERIOR|FUNDAMENTAL|TECNICO)_?$/.test(value)) as string[] | undefined;

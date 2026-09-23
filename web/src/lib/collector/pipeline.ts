@@ -120,13 +120,6 @@ export async function runCollector(externalRunId?: string): Promise<{ runId: str
               metadata.ai_model = aiRes.model;
               status = "PROCESSED";
               aiProcessed++;
-              try { await syncConcursoFromDocument(svc, { ...doc, rawText: raw }, parsed.data, doc.tier); } catch (e) {
-                errors++;
-                const msg = e instanceof Error ? e.message : "ERR";
-                metadata.sync_error = msg;
-                // don't mark PROCESSED if sync failed
-                if (msg.includes("upsert")) status = "AI_PENDING";
-              }
             } else {
               status = "AI_PENDING";
               aiPending++;
@@ -148,6 +141,7 @@ export async function runCollector(externalRunId?: string): Promise<{ runId: str
           aiPending++;
         }
 
+        let persistedDocumentId = existing?.id || null;
         if (existing) {
           const { error: verErr } = await svc.from("collector_document_versions").insert({ document_id: existing.id, content_hash: existing.content_hash, raw_text: existing.raw_text, metadata: existing.metadata });
           if (verErr) errors++;
@@ -155,7 +149,7 @@ export async function runCollector(externalRunId?: string): Promise<{ runId: str
           if (updErr) errors++; else documentsUpdated++;
         } else {
           const sourceId = sourceMap.get(doc.sourceName)?.id;
-          const { error: insErr } = await svc.from("collector_documents").insert({
+          const { data: inserted, error: insErr } = await svc.from("collector_documents").insert({
             source_id: sourceId,
             source_url: doc.sourceUrl,
             canonical_url: doc.canonicalUrl,
@@ -167,8 +161,21 @@ export async function runCollector(externalRunId?: string): Promise<{ runId: str
             raw_text: raw.slice(0, 20000),
             status,
             metadata,
-          });
-          if (insErr) errors++; else documentsNew++;
+          }).select("id").single();
+          if (insErr) errors++; else { persistedDocumentId = inserted.id; documentsNew++; }
+        }
+
+        // The logical document relation is persisted only after the collector document has an ID.
+        if (persistedDocumentId && status === "PROCESSED" && metadata.ai_extracted) {
+          const parsed = ExtractConcursoSchema.safeParse(metadata.ai_extracted);
+          if (parsed.success) {
+            try {
+              await syncConcursoFromDocument(svc, { ...doc, rawText: raw, documentId: persistedDocumentId, documentType: docType, publishedAt: doc.publishedAt }, parsed.data, doc.tier);
+            } catch (error) {
+              errors++;
+              await svc.from("collector_documents").update({ status: "AI_PENDING", metadata: { ...metadata, sync_error: error instanceof Error ? error.message : "ERR" } }).eq("id", persistedDocumentId);
+            }
+          }
         }
 
         // candidate discovery
