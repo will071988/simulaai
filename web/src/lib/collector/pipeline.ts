@@ -8,6 +8,7 @@ import { ExtractConcursoSchema } from "./schemas";
 import { syncConcursoFromDocument } from "./syncConcurso";
 import { recalculateHotScores } from "./recalculateHotScores";
 import { deterministicIdentity, enrichDocument } from "./enrichment";
+import { validateContestPage } from "./contestPageValidator";
 
 const MAX_AI_PER_RUN = Number(process.env.MAX_AI_REQUESTS_PER_RUN || 30);
 
@@ -93,16 +94,23 @@ export async function runCollector(externalRunId?: string): Promise<{ runId: str
           textHash = hashContent(raw.slice(0, 50000));
           contentHash = textHash;
         }
+        const page = validateContestPage(doc.title, doc.canonicalUrl, raw);
+        if (page.decision === "REJECT") {
+          if (existing) await svc.from("collector_documents").update({ metadata: { ...(existing.metadata || {}), page_validation: page }, status: "FETCHED" }).eq("id", existing.id);
+          continue;
+        }
         if (existing && existing.content_hash === contentHash) continue;
 
-        const metadata: Record<string, unknown> = { source_name: doc.sourceName, source_url: doc.sourceUrl, tier: doc.tier, document_type: docType, confidence: doc.tier === 1 ? 0.95 : 0.7 };
+        const metadata: Record<string, unknown> = { source_name: doc.sourceName, source_url: doc.sourceUrl, tier: doc.tier, document_type: docType, page_validation: page, confidence: doc.tier === 1 ? 0.95 : 0.7 };
         const vagasMatch = raw.match(/(\d{1,5})\s+vagas/i);
         const salarioMatch = raw.match(/R\$\s*([\d\.\,]+)/);
         if (vagasMatch) metadata.vagas_hint = vagasMatch[1];
         if (salarioMatch) metadata.salario_hint = salarioMatch[1];
 
         let status = "FETCHED";
-        if (aiProcessed < MAX_AI_PER_RUN) {
+        if (page.decision === "MAYBE") {
+          status = "FETCHED";
+        } else if (aiProcessed < MAX_AI_PER_RUN) {
           const aiRes = await generateWithFallback<{ orgao: string | null; banca: string | null; vagas: number | null; salario?: number | null; prova_data?: string | null; status: string | null; evidence?: unknown }>({
             taskType: "EXTRACT_CONCURSO",
             prompt: `Extraia concurso. Retorne JSON {orgao,banca,vagas,salario,inscricao_inicio,inscricao_fim,prova_data,cadastro_reserva,cargos,escolaridade,scope,state_code,city,status,evidence:{...}}. Evidence deve conter trechos literais do texto. Não invente fatos, localização ou valores ausentes. Prompt v3.`,

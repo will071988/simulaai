@@ -19,7 +19,9 @@ function normalizeBanca(v: string | null): string | null {
 }
 
 import { calcHotScoreWithReasons } from "./hotScore";
-import { enrichDocument, logicalKey, valueHash, type Evidence } from "./enrichment";
+import { enrichDocument, valueHash, type Evidence } from "./enrichment";
+import { resolveField } from "./fieldResolver";
+import { scoreEntity, stableEntityKey } from "./entityResolution";
 
 type Location = { scope: string | null; state_code: string | null; city: string | null; latitude: number | null; longitude: number | null; label: string | null; confidence: number };
 
@@ -58,9 +60,22 @@ export async function syncConcursoFromDocument(
   const loc = deterministic.scope ? { scope: deterministic.scope, state_code: deterministic.state_code, city: deterministic.city, latitude: null, longitude: null, label: deterministic.location_label } : resolveLocation(orgao, doc.title);
   const values = { vagas: deterministic.vagas ?? extracted.vagas, salario: deterministic.salario ?? extracted.salario ?? null, prova_data: deterministic.prova_data ?? extracted.prova_data ?? null, inscricao_inicio: deterministic.inscricao_inicio, inscricao_fim: deterministic.inscricao_fim, cadastro_reserva: deterministic.cadastro_reserva, cargos: deterministic.cargos, escolaridade: deterministic.escolaridade };
   const hot = calcHotScoreWithReasons({ status: extracted.status, vagas: values.vagas, salario: values.salario, prova_data: values.prova_data, inscricao_inicio: values.inscricao_inicio, inscricao_fim: values.inscricao_fim, tier });
-  const key = logicalKey(orgao, banca, doc.title);
-  const { data: matched } = await svc.from("concursos").select("id,orgao,banca,titulo,vagas,salario,prova_data,inscricao_inicio,inscricao_fim,status").eq("logical_key", key).maybeSingle();
-  const payload = { orgao, titulo: doc.title.slice(0, 200), banca, ...values, status: extracted.status || "previsto", edital_url: doc.canonicalUrl, scope: loc.scope, state_code: loc.state_code, city: loc.city, latitude: loc.latitude, longitude: loc.longitude, location_label: loc.label, logical_key: key, hot_score: hot.score, hot_reasons: hot.reasons, updated_at: new Date().toISOString(), quality_status: tier === 1 && deterministic.evidence.length >= 3 ? "VERIFIED" : "PARTIAL" };
+  const key = stableEntityKey(orgao, banca, doc.title);
+  let { data: matched } = await svc.from("concursos").select("id,orgao,banca,titulo,vagas,salario,prova_data,inscricao_inicio,inscricao_fim,cadastro_reserva,cargos,escolaridade,status,scope,state_code,city").eq("logical_key", key).maybeSingle();
+  if (!matched) {
+    const { data: candidates } = await svc.from("concursos").select("id,orgao,banca,titulo,vagas,salario,prova_data,inscricao_inicio,inscricao_fim,cadastro_reserva,cargos,escolaridade,status,scope,state_code,city").limit(200);
+    const scored = (candidates || []).map((candidate) => ({ candidate, ...scoreEntity(candidate, { orgao, banca, titulo: doc.title }) })).sort((a, b) => b.score - a.score)[0];
+    if (scored?.score >= 80 || (scored?.score >= 70 && (!banca || banca === "UNKNOWN" || !scored.candidate.banca))) matched = scored.candidate;
+  }
+  const incoming: Record<string, unknown> = { orgao, banca, titulo: doc.title.slice(0, 200), ...values, status: extracted.status || "previsto", scope: loc.scope, state_code: loc.state_code, city: loc.city };
+  let conflicted = false;
+  if (matched) for (const [field, value] of Object.entries(incoming)) {
+    const { data: evidence } = await svc.from("concurso_field_evidence").select("value_json,source_tier,observed_at,source_url,evidence_text").eq("concurso_id", matched.id).eq("field_name", field);
+    const decision = resolveField((matched as Record<string, unknown>)[field], value, { tier, observedAt: new Date().toISOString(), isAmendment: /retifica|altera[cç][aã]o|comunicado/i.test(`${doc.title} ${doc.rawText || ""}`) }, evidence || []);
+    incoming[field] = decision.resolvedValue;
+    conflicted ||= decision.conflict;
+  }
+  const payload = { ...incoming, edital_url: doc.canonicalUrl, latitude: loc.latitude, longitude: loc.longitude, location_label: loc.label, logical_key: key, hot_score: hot.score, hot_reasons: hot.reasons, updated_at: new Date().toISOString(), quality_status: conflicted ? "CONFLICTED" : tier === 1 && deterministic.evidence.length >= 3 ? "VERIFIED" : "PARTIAL" };
   const result = matched?.id ? await svc.from("concursos").update(payload).eq("id", matched.id).select("id").single() : await svc.from("concursos").upsert(payload, { onConflict: "edital_url" }).select("id").single();
   if (result.error || !result.data) throw new Error(`syncConcurso upsert: ${result.error?.message}`);
   const evidence: Evidence[] = [
@@ -72,7 +87,7 @@ export async function syncConcursoFromDocument(
   for (const item of evidence) await svc.from("concurso_field_evidence").upsert({ concurso_id: result.data.id, field_name: item.field, value_json: item.value, value_hash: valueHash(item.value), source_url: doc.canonicalUrl, source_name: doc.sourceName || null, source_tier: tier, document_id: doc.documentId || null, evidence_text: item.evidence, confidence: Math.min(item.confidence, tier === 1 ? 1 : 0.7) }, { onConflict: "concurso_id,field_name,source_url,value_hash" });
   if (matched) {
     const tracked: Record<string, unknown> = { orgao, banca, titulo: doc.title.slice(0, 200), ...values, status: extracted.status || "previsto" };
-    let conflicted = false;
+    // The resolver has already determined whether the incoming evidence conflicts.
     for (const [field, nextValue] of Object.entries(tracked)) {
       const oldValue = (matched as Record<string, unknown>)[field];
       if (oldValue == null || nextValue == null || JSON.stringify(oldValue) === JSON.stringify(nextValue)) continue;
