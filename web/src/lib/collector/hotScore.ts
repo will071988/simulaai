@@ -21,8 +21,6 @@ export function calcHotScore(input: HotScoreInput): number {
     if (diffDays >= 0 && diffDays <= 30) score += 20;
     else if (diffDays > 30 && diffDays <= 90) score += 15;
     else if (diffDays > 90 && diffDays <= 180) score += 5;
-  } else {
-    score += 10; // sem data, mas ainda relevante
   }
 
   if ((input.vagas || 0) >= 1000) score += 10;

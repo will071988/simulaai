@@ -20,14 +20,28 @@ function normalizeBanca(v: string | null): string | null {
 
 import { calcHotScore } from "./hotScore";
 
-const locationMap: Record<string, { scope: string; state_code: string | null; latitude: number; longitude: number; label: string }> = {
-  PF: { scope: "NACIONAL", state_code: null, latitude: -15.7939, longitude: -47.8828, label: "Nacional - Brasilia (sede)" },
-  PRF: { scope: "NACIONAL", state_code: null, latitude: -15.7939, longitude: -47.8828, label: "Nacional - Brasilia (sede)" },
-  INSS: { scope: "NACIONAL", state_code: null, latitude: -15.7939, longitude: -47.8828, label: "Nacional - Brasilia (sede)" },
-  BACEN: { scope: "NACIONAL", state_code: null, latitude: -15.7939, longitude: -47.8828, label: "Nacional - Brasilia (sede)" },
-  "PC-BA": { scope: "ESTADUAL", state_code: "BA", latitude: -12.9714, longitude: -38.5124, label: "Bahia (estadual)" },
-  Transpetro: { scope: "NACIONAL", state_code: null, latitude: -15.7939, longitude: -47.8828, label: "Nacional - Brasilia (sede)" },
+type Location = { scope: string | null; state_code: string | null; city: string | null; latitude: number | null; longitude: number | null; label: string | null; confidence: number };
+
+const locationMap: Record<string, Location> = {
+  PF: { scope: "NACIONAL", state_code: null, city: null, latitude: -15.7939, longitude: -47.8828, label: "Nacional - sede administrativa em Brasilia", confidence: 1 },
+  PRF: { scope: "NACIONAL", state_code: null, city: null, latitude: -15.7939, longitude: -47.8828, label: "Nacional - sede administrativa em Brasilia", confidence: 1 },
+  INSS: { scope: "NACIONAL", state_code: null, city: null, latitude: -15.7939, longitude: -47.8828, label: "Nacional - sede administrativa em Brasilia", confidence: 1 },
+  BACEN: { scope: "NACIONAL", state_code: null, city: null, latitude: -15.7939, longitude: -47.8828, label: "Nacional - sede administrativa em Brasilia", confidence: 1 },
+  Transpetro: { scope: "NACIONAL", state_code: null, city: null, latitude: -15.7939, longitude: -47.8828, label: "Nacional - sede administrativa em Brasilia", confidence: 1 },
+  "PC-BA": { scope: "ESTADUAL", state_code: "BA", city: null, latitude: -12.9714, longitude: -38.5124, label: "Bahia - abrangencia estadual", confidence: 0.9 },
+  "PC-RJ": { scope: "ESTADUAL", state_code: "RJ", city: null, latitude: null, longitude: null, label: "Rio de Janeiro - abrangencia estadual", confidence: 0.9 },
 };
+
+const cityMap: Record<string, Location> = {
+  "PREFEITURA DE NITEROI": { scope: "MUNICIPAL", state_code: "RJ", city: "Niteroi", latitude: -22.8832, longitude: -43.1034, label: "Niteroi - abrangencia municipal", confidence: 0.8 },
+};
+
+export function resolveLocation(orgao: string, title: string): Location {
+  const normalized = `${orgao} ${title}`.toUpperCase();
+  for (const [name, location] of Object.entries(cityMap)) if (normalized.includes(name)) return location;
+  for (const [name, location] of Object.entries(locationMap)) if (orgao === name || normalized.includes(name)) return location;
+  return { scope: null, state_code: null, city: null, latitude: null, longitude: null, label: null, confidence: 0 };
+}
 
 export async function syncConcursoFromDocument(
   svc: SupabaseClient,
@@ -39,11 +53,11 @@ export async function syncConcursoFromDocument(
   const orgao = normalizeOrgao(extracted.orgao);
   const banca = normalizeBanca(extracted.banca);
   if (!orgao || !banca) return null;
-  const loc = locationMap[orgao] || { scope: "NACIONAL", state_code: null, latitude: -15.7939, longitude: -47.8828, label: "Nacional - Brasilia" };
-  const hot = calcHotScore({ status: extracted.status, vagas: extracted.vagas, tier });
+  const loc = resolveLocation(orgao, doc.title);
+  const hot = calcHotScore({ status: extracted.status, vagas: extracted.vagas, salario: extracted.salario, prova_data: extracted.prova_data, tier });
   const { error } = await svc
     .from("concursos")
-    .upsert({ orgao, titulo: doc.title.slice(0, 200), banca, vagas: extracted.vagas, status: extracted.status || "previsto", edital_url: doc.canonicalUrl, scope: loc.scope, state_code: loc.state_code, latitude: loc.latitude, longitude: loc.longitude, location_label: loc.label, hot_score: hot }, { onConflict: "edital_url" });
+    .upsert({ orgao, titulo: doc.title.slice(0, 200), banca, vagas: extracted.vagas, salario: extracted.salario ?? null, prova_data: extracted.prova_data ?? null, status: extracted.status || "previsto", edital_url: doc.canonicalUrl, scope: loc.scope, state_code: loc.state_code, city: loc.city, latitude: loc.latitude, longitude: loc.longitude, location_label: loc.label, hot_score: hot }, { onConflict: "edital_url" });
   if (error) throw new Error(`syncConcurso upsert: ${error.message}`);
   return tier === 1 ? 0.95 : 0.7;
 }

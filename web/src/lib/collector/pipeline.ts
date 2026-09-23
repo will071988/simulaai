@@ -6,6 +6,7 @@ import type { DiscoveredDocument } from "./types";
 import { isSafeUrl } from "./security";
 import { ExtractConcursoSchema } from "./schemas";
 import { syncConcursoFromDocument } from "./syncConcurso";
+import { recalculateHotScores } from "./recalculateHotScores";
 
 const MAX_AI_PER_RUN = Number(process.env.MAX_AI_REQUESTS_PER_RUN || 30);
 
@@ -101,9 +102,9 @@ export async function runCollector(externalRunId?: string): Promise<{ runId: str
 
         let status = "FETCHED";
         if (aiProcessed < MAX_AI_PER_RUN) {
-          const aiRes = await generateWithFallback<{ orgao: string | null; banca: string | null; vagas: number | null; status: string | null; evidence?: unknown }>({
+          const aiRes = await generateWithFallback<{ orgao: string | null; banca: string | null; vagas: number | null; salario?: number | null; prova_data?: string | null; status: string | null; evidence?: unknown }>({
             taskType: "EXTRACT_CONCURSO",
-            prompt: `Extraia concurso. Retorne JSON {orgao,banca,vagas,status,evidence:{orgao,banca,vagas,status}} com evidence trecho pequeno. Não invente. Se não houver, null. Prompt v1.`,
+            prompt: `Extraia concurso. Retorne JSON {orgao,banca,vagas,salario,prova_data,status,evidence:{orgao,banca,vagas,salario,prova_data,status}} com evidence textual curto. Não invente localização nem valores ausentes. Se não houver, null. Prompt v2.`,
             input: { title: doc.title, snippet: raw.slice(0, 4000) },
             promptVersion: "extract_concurso_v1",
           }, { validate: (d) => ExtractConcursoSchema.safeParse(d).success });
@@ -177,6 +178,7 @@ export async function runCollector(externalRunId?: string): Promise<{ runId: str
       }
     }
 
+    await recalculateHotScores(svc);
     const finalStatus = aiPending > 0 && aiProcessed === 0 ? "DEGRADED_NO_AI" : "SUCCESS";
     const { error: runUpdErr } = await svc.from("collector_runs").update({ finished_at: new Date().toISOString(), status: finalStatus, sources_checked: sourcesChecked, documents_found: documentsFound, documents_new: documentsNew, documents_updated: documentsUpdated, ai_processed: aiProcessed, ai_pending: aiPending, errors_count: errors }).eq("id", runId);
     if (runUpdErr) throw new Error(runUpdErr.message);

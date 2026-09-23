@@ -7,7 +7,7 @@ export class GeminiProvider implements AIProvider {
   model: string;
   private cb = new CircuitBreaker();
   constructor(model?: string) {
-    this.model = model || process.env.AI_GEMINI_MODEL || "gemini-2.0-flash-lite";
+    this.model = model || process.env.AI_GEMINI_MODEL || "gemini-2.5-flash";
   }
   async healthCheck() {
     if (this.cb.isOpen()) return { healthy: false };

@@ -2,6 +2,7 @@
 import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { getHotCta } from "@/lib/collector/hotCta";
 
 type Hot = {
   id: string;
@@ -16,7 +17,8 @@ type Hot = {
   longitude: number;
   location_label: string;
   hot_score: number;
-  edital_url: string;
+  edital_url: string | null;
+  simulado_slug: string | null;
 };
 
 const MapContainer = dynamic(() => import("react-leaflet").then((m) => m.MapContainer), { ssr: false });
@@ -32,7 +34,7 @@ export function HotConcursosMap() {
   useEffect(() => {
     import("leaflet").then((L) => {
       // fix default icon
-      // @ts-expect-error
+      // @ts-expect-error Leaflet does not expose its legacy icon URL hook in its types.
       delete L.Icon.Default.prototype._getIconUrl;
       L.Icon.Default.mergeOptions({
         iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
@@ -64,7 +66,7 @@ export function HotConcursosMap() {
                 <div className="text-sm">
                   <b>{c.orgao}</b> — {c.titulo}<br />{c.banca} • {c.vagas} vagas • {c.status}<br />
                   <span className="text-xs">{c.location_label} • hot {c.hot_score}</span><br />
-                  <Link href={`/simulados/${c.orgao.toLowerCase()}-cebraspe-01`} className="text-violet-600 underline">Ver simulado</Link>
+                  {(() => { const cta = getHotCta(c); return cta ? (cta.href.startsWith("/simulados/") ? <Link href={cta.href} className="text-violet-600 underline">{cta.label}</Link> : <a href={cta.href} target="_blank" rel="noreferrer" className="text-violet-600 underline">{cta.label}</a>) : null; })()}
                 </div>
               </Popup>
             </Marker>
