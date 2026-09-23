@@ -1,8 +1,8 @@
 {
   "crons": [
-    { "path": "/api/collector?run=1", "schedule": "0 6 * * *" },
-    { "path": "/api/collector/pending", "schedule": "15 6 * * *" },
-    { "path": "/api/collector/pending", "schedule": "30 6 * * *" },
-    { "path": "/api/collector?run=1", "schedule": "0 7 * * *" }
+    { "path": "/api/collector?run=1", "schedule": "0 9 * * *" },
+    { "path": "/api/collector/pending", "schedule": "15 9 * * *" },
+    { "path": "/api/collector/pending", "schedule": "30 9 * * *" },
+    { "path": "/api/collector/pending", "schedule": "45 9 * * *" }
   ]
 }

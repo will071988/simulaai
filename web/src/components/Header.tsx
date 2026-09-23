@@ -7,7 +7,7 @@ export function Header() {
         <Link href="/" className="flex items-center gap-3">
           <span className="h-9 w-9 rounded-xl bg-gradient-to-br from-violet-600 to-cyan-400 grid place-items-center font-black text-white glow-violet">S</span>
           <span className="font-display font-bold text-lg tracking-tight">SimulaAí</span>
-          <span className="hidden sm:inline text-xs px-2 py-1 rounded-full bg-white/10 border border-white/15">BETA • até 01/out</span>
+           <span className="hidden sm:inline text-xs px-2 py-1 rounded-full bg-white/10 border border-white/15">BETA</span>
         </Link>
         <nav className="hidden md:flex items-center gap-6 text-sm text-white/80">
           <Link href="/quiz" className="hover:text-white">Quiz</Link>
@@ -28,7 +28,7 @@ export function Footer() {
     <footer className="border-t border-white/10 bg-[#070A1A] py-10">
       <div className="mx-auto max-w-6xl px-6 flex flex-col sm:flex-row justify-between gap-4 text-sm text-white/60">
         <span>© 2026 SimulaAí — Simulados com IA. Não somos banca oficial. Fontes: Cebraspe, FGV, AOCP, Cesgranrio.</span>
-        <span className="text-white/80">Produção: 01/out/2026 • Coletor diário 06h • R$29,90/mês</span>
+         <span className="text-white/80">SimulaAí • dados de fontes públicas</span>
       </div>
     </footer>
   );

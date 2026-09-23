@@ -18,7 +18,7 @@ export default function Home() {
         <div className="relative mx-auto max-w-6xl px-6 pt-12 pb-10 sm:pt-16">
           <div className="inline-flex items-center gap-2 glass rounded-full px-4 py-2 text-xs">
             <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-            Coletor IA ativo • 6 editais quentes monitorados diariamente às 06h
+            Coletor IA em monitoramento • dados atualizados conforme as fontes
             <span className="hidden sm:inline px-2 py-0.5 rounded-full bg-white text-black font-bold">NOVO</span>
           </div>
 
@@ -38,7 +38,7 @@ export default function Home() {
               </div>
               <div className="mt-6 flex items-center gap-6 text-sm">
                 <span className="flex -space-x-2"><span className="h-8 w-8 rounded-full bg-gradient-to-br from-violet-500 to-cyan-400 border-2 border-[#070A1A]" /><span className="h-8 w-8 rounded-full bg-gradient-to-br from-orange-400 to-pink-500 border-2 border-[#070A1A]" /><span className="h-8 w-8 rounded-full bg-gradient-to-br from-emerald-400 to-cyan-400 border-2 border-[#070A1A]" /></span>
-                <span className="text-white/60">+2.400 concurseiros • 4.8/5 (327 avaliações)</span>
+                 <span className="text-white/60">Treine grátis • acompanhe seu desempenho</span>
                 <span className="hidden sm:inline px-3 py-1 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/20 text-xs">Cronômetro + Ranking</span>
               </div>
             </div>
@@ -72,9 +72,9 @@ export default function Home() {
           <div className="mt-10 grid grid-cols-2 sm:grid-cols-4 gap-3">
             {[
               ["6", "trilhas quentes"],
-              ["12k+", "questões no estilo banca"],
-              ["06h", "coletor diário IA"],
-              ["R$29,90", "plano ilimitado"],
+               ["6", "trilhas disponíveis"],
+               ["IA", "correção comentada"],
+               ["Grátis", "comece agora"],
             ].map(([n,l])=>(
               <div key={n} className="glass rounded-2xl p-4 text-center">
                 <div className="font-display font-bold text-2xl">{n}</div><div className="text-xs text-white/60">{l}</div>
@@ -129,7 +129,7 @@ export default function Home() {
       <section className="mx-auto max-w-6xl px-6 py-6">
         <div className="grid md:grid-cols-3 gap-4">
           {[
-            ["01", "Radar IA 06h", "Monitoramos Cebraspe, FGV, AOCP, Cesgranrio, DOU e criamos simulado no estilo da banca."],
+            ["01", "Radar de concursos", "Acompanhe concursos com dados de fontes públicas e veja os editais relevantes."],
             ["02", "Prova cronometrada", "Faça no tempo real, com ranking, estatísticas e controle de ansiedade."],
             ["03", "Correção que ensina", "IA explica pegadinha da banca, tema fraco e sugere o próximo simulado."],
           ].map(([n,t,d])=>(
@@ -147,25 +147,9 @@ export default function Home() {
         <div className="rounded-[28px] bg-white text-zinc-900 p-6 sm:p-8">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <h2 className="font-display font-bold text-2xl">Radar de editais — coletor diário</h2>
-            <span className="text-xs px-3 py-1 rounded-full bg-zinc-900 text-white">Atualiza todo dia 06h • /api/collector</span>
+             <span className="text-xs px-3 py-1 rounded-full bg-zinc-900 text-white">Dados das fontes monitoradas</span>
           </div>
-          <div className="mt-6 overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="text-zinc-500"><tr><th className="text-left py-2">Órgão</th><th className="text-left">Vagas</th><th className="text-left">Banca</th><th className="text-left">Status</th></tr></thead>
-              <tbody>
-                {[
-                  ["Polícia Federal", "1.000", "Cebraspe", "Previsto"],
-                  ["PRF", "533", "Cebraspe", "Previsto"],
-                  ["INSS", "1.500", "A definir", "Autorizado"],
-                  ["Banco Central", "560", "A definir", "Solicitado"],
-                  ["PC-BA", "750", "AOCP", "Aberto até 08/set"],
-                  ["Transpetro", "281 + 3.890 CR", "Cesgranrio", "Aberto"],
-                ].map(r=>(
-                  <tr key={r[0]} className="border-t"><td className="py-3 font-medium">{r[0]}</td><td>{r[1]}</td><td>{r[2]}</td><td><span className="px-2 py-1 rounded-full bg-zinc-900 text-white text-xs">{r[3]}</span></td></tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+           <p className="mt-6 text-sm text-zinc-600">O mapa acima mostra os concursos quentes disponíveis no banco de dados. Consulte o edital oficial antes de tomar qualquer decisão.</p>
           <Link href="/simulados" className="mt-6 inline-block rounded-full bg-zinc-900 text-white px-6 py-3 font-medium">Gerar simulado do edital →</Link>
         </div>
       </section>
@@ -185,8 +169,8 @@ export default function Home() {
               <span className="text-xs font-black tracking-widest px-3 py-1 rounded-full bg-white text-black">MAIS POPULAR</span>
               <h3 className="font-bold mt-3">Trilha Ilimitada</h3><p className="text-3xl font-black mt-2">R$29,90<span className="text-base font-normal text-white/60">/mês</span></p><p className="text-sm text-white/60">ou R$299/ano (2 meses grátis)</p>
               <ul className="mt-4 text-sm space-y-2"><li>✓ Ilimitado na sua trilha</li><li>✓ Correção IA completa</li><li>✓ Ranking + evolução por tema</li><li>✓ Novos simulados toda semana</li></ul>
-              <Link href="/simulados" className="mt-6 block text-center rounded-full bg-white text-black py-3 font-bold hover:bg-zinc-100 transition">Assinar por Pix →</Link>
-              <p className="text-xs text-center text-white/50 mt-2">Mercado Pago • Stripe em breve</p>
+               <Link href="/simulados" className="mt-6 block text-center rounded-full bg-white text-black py-3 font-bold hover:bg-zinc-100 transition">Conhecer o plano →</Link>
+               <p className="text-xs text-center text-white/50 mt-2">Pagamento será disponibilizado em breve</p>
             </div>
           </div>
           <div className="glass rounded-[24px] p-6">

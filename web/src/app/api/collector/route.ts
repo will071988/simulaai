@@ -4,6 +4,7 @@ import { runCollector } from "@/lib/collector/pipeline";
 import { isCronAuthorized } from "@/lib/collector/cronAuth";
 import { acquireCollectorLock, releaseCollectorLock } from "@/lib/collector/lock";
 import crypto from "crypto";
+import { deriveCollectorHealth } from "@/lib/collector/health";
 
 async function executeCollectorWithLock(): Promise<{ runId: string; status: string; stats: unknown }> {
   const runId = crypto.randomUUID();
@@ -32,7 +33,7 @@ export async function GET(req: Request) {
     const degraded = sources?.filter((s) => s.last_status === "DEGRADED" || s.last_status === "EMPTY").length ?? 0;
     return NextResponse.json({
       ok: true,
-      status: "HEALTHY",
+      status: deriveCollectorHealth({ lastRun, sourcesHealthy: healthy, sourcesDegraded: degraded, pendingAI: pendingAI ?? 0 }),
       timestamp: new Date().toISOString(),
       lastRun,
       sourcesHealthy: healthy,

@@ -77,7 +77,7 @@ export default function SimuladoSlugPage({ params }: { params: Promise<{ slug: s
               <h2 className="font-display font-bold text-xl">Desbloqueie ilimitado por R$29,90</h2>
               <p className="text-sm text-white/70 mt-1">Correção completa, ranking, evolução por tema e novos simulados toda semana.</p>
               <div className="mt-4 flex flex-wrap gap-3">
-                <Link href="/#planos" className="rounded-full bg-white text-black px-6 py-3 font-bold">Assinar por Pix →</Link>
+                <Link href="/#planos" className="rounded-full bg-white text-black px-6 py-3 font-bold">Conhecer planos →</Link>
                 <span className="glass rounded-full px-4 py-3 text-sm">Avulso R$14,90 vira crédito</span>
               </div>
             </div>

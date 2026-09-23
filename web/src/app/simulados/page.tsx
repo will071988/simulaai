@@ -12,7 +12,7 @@ export default function SimuladosPage() {
             <h1 className="font-display font-bold text-4xl">Escolha seu simulado</h1>
             <p className="mt-2 text-white/65">Faça 1 grátis por trilha. Cronometrado, com ranking e correção IA.</p>
           </div>
-          <span className="glass rounded-full px-4 py-2 text-xs">6 trilhas • coletor 06h • R$29,90</span>
+          <span className="glass rounded-full px-4 py-2 text-xs">6 trilhas • comece grátis</span>
         </div>
         <div className="mt-6 glass rounded-[24px] p-5 flex flex-wrap items-center justify-between gap-4">
           <div>
@@ -44,7 +44,7 @@ export default function SimuladosPage() {
         <div className="mt-8 glass rounded-3xl p-6 flex flex-wrap items-center justify-between gap-4">
           <div>
             <h3 className="font-display font-semibold">Não achou sua prova?</h3>
-            <p className="text-sm text-white/60">Coletor cria simulado novo todo dia 06h no estilo da banca.</p>
+            <p className="text-sm text-white/60">Treine com simulados organizados por concurso e banca.</p>
           </div>
           <Link href="/api/collector" className="rounded-full bg-white text-black px-6 py-3 font-semibold">Ver radar ao vivo</Link>
         </div>

@@ -1,7 +1,6 @@
 import { supabaseService } from "@/lib/supabase-server";
 import { adapters } from "./adapters";
 import { safeFetch, hashContent, hashBuffer, extractPdfText } from "./http";
-import { generateWithFallback } from "@/lib/ai/router";
 import type { DiscoveredDocument } from "./types";
 import { isSafeUrl } from "./security";
 import { ExtractConcursoSchema } from "./schemas";
@@ -9,6 +8,7 @@ import { syncConcursoFromDocument } from "./syncConcurso";
 import { recalculateHotScores } from "./recalculateHotScores";
 import { deterministicIdentity, enrichDocument } from "./enrichment";
 import { validateContestPage } from "./contestPageValidator";
+import { extractConcursoWithAI } from "./extractConcursoWithAI";
 
 const MAX_AI_PER_RUN = Number(process.env.MAX_AI_REQUESTS_PER_RUN || 30);
 
@@ -111,12 +111,7 @@ export async function runCollector(externalRunId?: string): Promise<{ runId: str
         if (page.decision === "MAYBE") {
           status = "FETCHED";
         } else if (aiProcessed < MAX_AI_PER_RUN) {
-          const aiRes = await generateWithFallback<{ orgao: string | null; banca: string | null; vagas: number | null; salario?: number | null; prova_data?: string | null; status: string | null; evidence?: unknown }>({
-            taskType: "EXTRACT_CONCURSO",
-            prompt: `Extraia concurso. Retorne JSON {orgao,banca,vagas,salario,inscricao_inicio,inscricao_fim,prova_data,cadastro_reserva,cargos,escolaridade,scope,state_code,city,status,evidence:{...}}. Evidence deve conter trechos literais do texto. Não invente fatos, localização ou valores ausentes. Prompt v3.`,
-            input: { title: doc.title, snippet: raw.slice(0, 4000) },
-            promptVersion: "extract_concurso_v3",
-          }, { validate: (d) => ExtractConcursoSchema.safeParse(d).success });
+          const aiRes = await extractConcursoWithAI(doc.title, raw);
           if (aiRes.ok && aiRes.data) {
             const parsed = ExtractConcursoSchema.safeParse(aiRes.data);
             if (parsed.success) {
