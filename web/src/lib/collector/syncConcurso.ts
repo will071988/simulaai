@@ -21,9 +21,11 @@ function normalizeBanca(v: string | null): string | null {
 import { calcHotScoreWithReasons } from "./hotScore";
 import { enrichDocument, valueHash, type Evidence } from "./enrichment";
 import { resolveField } from "./fieldResolver";
-import { scoreEntity, stableEntityKey } from "./entityResolution";
+import { extractIdentitySignals, scoreEntity, stableEntityKey, type ContestIdentity } from "./entityResolution";
 
 type Location = { scope: string | null; state_code: string | null; city: string | null; latitude: number | null; longitude: number | null; label: string | null; confidence: number };
+type ContestRow = { id: string; orgao: string; banca: string | null; titulo: string; cargos?: string[] | null; escolaridade?: string[] | null; edital_number?: string | null; process_number?: string | null; official_slug?: string | null; official_source?: string | null; cargo_key?: string | null; cargo_group_key?: string | null; [key: string]: unknown };
+function candidateToIdentity(candidate: ContestRow): ContestIdentity { return { ...extractIdentitySignals({ title: candidate.titulo, url: candidate.official_slug ? `https://candidate.invalid/concursos/${candidate.official_slug}` : "https://candidate.invalid/", orgao: candidate.orgao, banca: candidate.banca, cargos: candidate.cargos, escolaridade: candidate.escolaridade }), editalNumber: candidate.edital_number || null, processNumber: candidate.process_number || null, officialSlug: candidate.official_slug || null, officialSource: candidate.official_source || null, cargoKey: candidate.cargo_key || null, cargoGroupKey: candidate.cargo_group_key || null }; }
 
 const locationMap: Record<string, Location> = {
   PF: { scope: "NACIONAL", state_code: null, city: null, latitude: -15.7939, longitude: -47.8828, label: "Nacional - sede administrativa em Brasilia", confidence: 1 },
@@ -60,12 +62,18 @@ export async function syncConcursoFromDocument(
   const loc = deterministic.scope ? { scope: deterministic.scope, state_code: deterministic.state_code, city: deterministic.city, latitude: null, longitude: null, label: deterministic.location_label } : resolveLocation(orgao, doc.title);
   const values = { vagas: deterministic.vagas ?? extracted.vagas, salario: deterministic.salario ?? extracted.salario ?? null, prova_data: deterministic.prova_data ?? extracted.prova_data ?? null, inscricao_inicio: deterministic.inscricao_inicio, inscricao_fim: deterministic.inscricao_fim, cadastro_reserva: deterministic.cadastro_reserva, cargos: deterministic.cargos, escolaridade: deterministic.escolaridade };
   const hot = calcHotScoreWithReasons({ status: extracted.status, vagas: values.vagas, salario: values.salario, prova_data: values.prova_data, inscricao_inicio: values.inscricao_inicio, inscricao_fim: values.inscricao_fim, tier });
-  const key = stableEntityKey(orgao, banca, doc.title);
-  let { data: matched } = await svc.from("concursos").select("id,orgao,banca,titulo,vagas,salario,prova_data,inscricao_inicio,inscricao_fim,cadastro_reserva,cargos,escolaridade,status,scope,state_code,city").eq("logical_key", key).maybeSingle();
+  const identity = extractIdentitySignals({ title: doc.title, url: doc.canonicalUrl, rawText: doc.rawText, sourceName: doc.sourceName, orgao, banca, cargos: values.cargos, escolaridade: values.escolaridade });
+  const key = stableEntityKey(identity);
+  let possibleDuplicate: { id: string; score: number; reason: string; hardConflicts: string[] } | null = null;
+  let { data: matched } = key ? await svc.from("concursos").select("id,orgao,banca,titulo,vagas,salario,prova_data,inscricao_inicio,inscricao_fim,cadastro_reserva,cargos,escolaridade,status,scope,state_code,city,edital_number,process_number,official_slug,official_source,cargo_key,cargo_group_key").eq("logical_key", key).maybeSingle() : { data: null };
   if (!matched) {
-    const { data: candidates } = await svc.from("concursos").select("id,orgao,banca,titulo,vagas,salario,prova_data,inscricao_inicio,inscricao_fim,cadastro_reserva,cargos,escolaridade,status,scope,state_code,city").limit(200);
-    const scored = (candidates || []).map((candidate) => ({ candidate, ...scoreEntity(candidate, { orgao, banca, titulo: doc.title }) })).sort((a, b) => b.score - a.score)[0];
-    if (scored?.score >= 80 || (scored?.score >= 70 && (!banca || banca === "UNKNOWN" || !scored.candidate.banca))) matched = scored.candidate;
+    const { data: candidates } = await svc.from("concursos").select("id,orgao,banca,titulo,vagas,salario,prova_data,inscricao_inicio,inscricao_fim,cadastro_reserva,cargos,escolaridade,status,scope,state_code,city,edital_number,process_number,official_slug,official_source,cargo_key,cargo_group_key").limit(200);
+    const scored = (candidates || []).map((candidate) => ({ candidate, resolution: scoreEntity(candidateToIdentity(candidate), identity) })).sort((a, b) => b.resolution.score - a.resolution.score)[0];
+    if (scored?.resolution.decision === "AUTO_MATCH") matched = scored.candidate;
+    else if (scored?.resolution.decision === "POSSIBLE_DUPLICATE") {
+      // Keep a separate entity; the pair is recorded after insertion below.
+      possibleDuplicate = { id: scored.candidate.id, score: scored.resolution.score, reason: scored.resolution.reason, hardConflicts: scored.resolution.hardConflicts };
+    }
   }
   const incoming: Record<string, unknown> = { orgao, banca, titulo: doc.title.slice(0, 200), ...values, status: extracted.status || "previsto", scope: loc.scope, state_code: loc.state_code, city: loc.city };
   let conflicted = false;
@@ -75,9 +83,10 @@ export async function syncConcursoFromDocument(
     incoming[field] = decision.resolvedValue;
     conflicted ||= decision.conflict;
   }
-  const payload = { ...incoming, edital_url: doc.canonicalUrl, latitude: loc.latitude, longitude: loc.longitude, location_label: loc.label, logical_key: key, hot_score: hot.score, hot_reasons: hot.reasons, updated_at: new Date().toISOString(), quality_status: conflicted ? "CONFLICTED" : tier === 1 && deterministic.evidence.length >= 3 ? "VERIFIED" : "PARTIAL" };
+  const payload = { ...incoming, edital_url: doc.canonicalUrl, latitude: loc.latitude, longitude: loc.longitude, location_label: loc.label, logical_key: key || `TEMP:${valueHash(doc.canonicalUrl)}`, edital_number: identity.editalNumber, process_number: identity.processNumber, official_slug: identity.officialSlug, official_source: identity.officialSource, cargo_key: identity.cargoKey, cargo_group_key: identity.cargoGroupKey, hot_score: hot.score, hot_reasons: hot.reasons, updated_at: new Date().toISOString(), quality_status: conflicted ? "CONFLICTED" : tier === 1 && deterministic.evidence.length >= 3 ? "VERIFIED" : "PARTIAL" };
   const result = matched?.id ? await svc.from("concursos").update(payload).eq("id", matched.id).select("id").single() : await svc.from("concursos").upsert(payload, { onConflict: "edital_url" }).select("id").single();
   if (result.error || !result.data) throw new Error(`syncConcurso upsert: ${result.error?.message}`);
+  if (possibleDuplicate && possibleDuplicate.id !== result.data.id) await svc.from("concurso_duplicate_candidates").upsert({ concurso_a_id: possibleDuplicate.id, concurso_b_id: result.data.id, score: possibleDuplicate.score, reason: possibleDuplicate.reason, hard_conflicts: possibleDuplicate.hardConflicts, identity_signals: identity, status: "POSSIBLE_DUPLICATE" }, { onConflict: "concurso_a_id,concurso_b_id" });
   const evidence: Evidence[] = [
     { field: "orgao", value: orgao, evidence: doc.title, confidence: 0.75 },
     { field: "banca", value: banca, evidence: doc.title, confidence: 0.7 },

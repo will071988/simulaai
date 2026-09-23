@@ -1,0 +1,12 @@
+alter table concursos add column if not exists edital_number text;
+alter table concursos add column if not exists process_number text;
+alter table concursos add column if not exists official_slug text;
+alter table concursos add column if not exists official_source text;
+alter table concursos add column if not exists cargo_key text;
+alter table concursos add column if not exists cargo_group_key text;
+create index if not exists concursos_official_identity_idx on concursos(official_source, official_slug);
+create index if not exists concursos_edital_number_idx on concursos(edital_number);
+create index if not exists concursos_process_number_idx on concursos(process_number);
+alter table concurso_duplicate_candidates add column if not exists hard_conflicts jsonb not null default '[]'::jsonb;
+alter table concurso_duplicate_candidates add column if not exists identity_signals jsonb not null default '{}'::jsonb;
+update concursos set logical_key = null where logical_key is not null and logical_key !~ '(EDITAL:|PROCESSO:|SLUG:|CARGO:|GRUPO:)';
