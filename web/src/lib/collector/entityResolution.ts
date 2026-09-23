@@ -25,8 +25,9 @@ export function extractIdentitySignals(input: IdentitySignalsInput): ContestIden
   const edital = text.match(/EDITAL(?:\s+(?:N[ºO]\.?|NUMERO))?\s*([A-Z-]*\s*\d{1,3}\/20\d{2})/i)?.[1]?.replace(/\s+/g, "").toUpperCase() || null;
   const process = text.match(/PROCESSO(?:\s+SELETIVO|\s+ADMINISTRATIVO)?\s*(?:N[ºO]\.?|NUMERO)?\s*([\d.]+\/20\d{2})/i)?.[1]?.replace(/\s+/g, "") || null;
   const slug = new URL(input.url).pathname.match(/\/concursos\/([^/?#]+)/i)?.[1]?.toLowerCase() || null;
-  const cargos = input.cargos?.map(normalizeCargo).filter(Boolean) as string[] | undefined;
-  const cargoKey = cargos?.[0] || normalizeCargo(text.match(/(?:CARGO|FUNCAO)\s*(?:DE|:)?\s*([A-Za-zÀ-ÿ ]{3,70})/i)?.[1] || null);
+  const cargos = input.cargos?.map(normalizeCargo).filter((value): value is string => value !== null && !/^NIVEL_(MEDIO|SUPERIOR|FUNDAMENTAL|TECNICO)_?$/.test(value)) as string[] | undefined;
+  const titleCargo = /GUARDA(?:\s+CIVIL)?\s+MUNICIPAL/i.test(text) ? "GUARDA CIVIL MUNICIPAL" : null;
+  const cargoKey = normalizeCargo(titleCargo) || cargos?.[0] || normalizeCargo(text.match(/(?:CARGO|FUNCAO)\s*(?:DE|:)?\s*([A-Za-zÀ-ÿ ]{3,70})/i)?.[1] || null);
   const cargoGroupKey = extractGroup(text, input.escolaridade);
   return { orgao: normalizeOrganization(input.orgao), ano: extractContestYear(text), banca: normalizeBanca(input.banca || null), editalNumber: edital, processNumber: process, cargoKey, cargoGroupKey, officialSlug: slug, officialSource: input.sourceName ? clean(input.sourceName) : null, titleKey: normalizeContestTitle(input.title) };
 }
