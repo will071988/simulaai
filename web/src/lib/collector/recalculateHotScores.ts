@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { calcHotScore } from "./hotScore";
+import { calcHotScoreWithReasons } from "./hotScore";
 
 type ConcursoRow = {
   id: string;
@@ -7,23 +7,27 @@ type ConcursoRow = {
   vagas: number | null;
   salario: number | null;
   prova_data: string | null;
+  inscricao_inicio: string | null;
+  inscricao_fim: string | null;
   created_at: string | null;
 };
 
 export async function recalculateHotScores(svc: SupabaseClient): Promise<number> {
-  const { data, error } = await svc.from("concursos").select("id,status,vagas,salario,prova_data,created_at");
+  const { data, error } = await svc.from("concursos").select("id,status,vagas,salario,prova_data,inscricao_inicio,inscricao_fim,created_at");
   if (error) throw new Error(`load concursos for hot score: ${error.message}`);
 
   let updated = 0;
   for (const row of (data || []) as ConcursoRow[]) {
-    const hotScore = calcHotScore({
+    const hot = calcHotScoreWithReasons({
       status: row.status,
       vagas: row.vagas,
       salario: row.salario,
       prova_data: row.prova_data,
+      inscricao_inicio: row.inscricao_inicio,
+      inscricao_fim: row.inscricao_fim,
       updated_at: row.created_at,
     });
-    const result = await svc.from("concursos").update({ hot_score: hotScore }).eq("id", row.id);
+    const result = await svc.from("concursos").update({ hot_score: hot.score, hot_reasons: hot.reasons }).eq("id", row.id);
     if (result.error) throw new Error(`update hot score ${row.id}: ${result.error.message}`);
     updated++;
   }

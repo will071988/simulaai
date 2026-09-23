@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { isModelAllowed } from "../src/lib/ai/config";
 import { resolveLocation } from "../src/lib/collector/syncConcurso";
 import { calcHotScore } from "../src/lib/collector/hotScore";
+import { enrichDocument, logicalKey } from "../src/lib/collector/enrichment";
 import { getHotCta } from "../src/lib/collector/hotCta";
 
 assert.equal(isModelAllowed("openai/gpt-oss-20b"), true);
@@ -25,7 +26,15 @@ const national = resolveLocation("PF", "Policia Federal - Agente");
 assert.equal(national.scope, "NACIONAL");
 assert.equal(national.label, "Nacional - sede administrativa em Brasilia");
 
-assert.equal(calcHotScore({ status: "aberto", vagas: 1000, tier: 1, prova_data: null, salario: null }), 45);
+assert.equal(calcHotScore({ status: "aberto", vagas: 1000, tier: 1, prova_data: null, salario: null }), 35);
+const fixture = enrichDocument("Agencia Nacional XYZ 2027", "Edital oficial\n120 vagas\nRemuneracao: R$ 9.800,00\nInscricoes: 01/10/2026 a 20/10/2026\nProva: 15/11/2026\nLocal de lotacao: Brasilia e Sao Paulo\nCargo: Analista\nEscolaridade: ensino superior");
+assert.equal(fixture.vagas, 120);
+assert.equal(fixture.salario, 9800);
+assert.deepEqual([fixture.inscricao_inicio, fixture.inscricao_fim], ["2026-10-01", "2026-10-20"]);
+assert.equal(fixture.prova_data, "2026-11-15");
+assert.equal(fixture.scope, null);
+assert.ok(fixture.evidence.some((item) => item.field === "vagas"));
+assert.equal(logicalKey("XYZ", "FGV", "Agencia Nacional XYZ 2027"), logicalKey("XYZ", "FGV", "Agencia Nacional XYZ 2027"));
 assert.deepEqual(getHotCta({ simulado_slug: "inss-fgv-01", edital_url: "https://example.test/edital" }), { label: "Fazer simulado", href: "/simulados/inss-fgv-01" });
 assert.deepEqual(getHotCta({ simulado_slug: null, edital_url: "https://example.test/edital" }), { label: "Ver edital", href: "https://example.test/edital" });
 assert.equal(getHotCta({ simulado_slug: null, edital_url: null }), null);

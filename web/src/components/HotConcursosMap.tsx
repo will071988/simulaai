@@ -9,7 +9,12 @@ type Hot = {
   titulo: string;
   orgao: string;
   banca: string;
-  vagas: number;
+  vagas: number | null;
+  salario: number | null;
+  inscricao_inicio: string | null;
+  inscricao_fim: string | null;
+  prova_data: string | null;
+  cargos: string[];
   status: string;
   scope: string;
   state_code: string;
@@ -17,6 +22,7 @@ type Hot = {
   longitude: number;
   location_label: string;
   hot_score: number;
+  hot_reasons: string[];
   edital_url: string | null;
   simulado_slug: string | null;
 };
@@ -64,8 +70,9 @@ export function HotConcursosMap() {
             <Marker key={c.id} position={[c.latitude, c.longitude]}>
               <Popup>
                 <div className="text-sm">
-                  <b>{c.orgao}</b> — {c.titulo}<br />{c.banca} • {c.vagas} vagas • {c.status}<br />
-                  <span className="text-xs">{c.location_label} • hot {c.hot_score}</span><br />
+                  <b>{c.orgao}</b> — {c.titulo}<br />{c.cargos?.[0] || "Cargo não informado"} • {c.banca}<br />{c.vagas == null ? "Vagas não informadas" : `${c.vagas} vagas`} • {c.salario == null ? "Salário não informado" : `R$ ${c.salario.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`}<br />
+                  Inscrições: {c.inscricao_inicio || "não informadas"} a {c.inscricao_fim || "não informadas"}<br />Prova: {c.prova_data || "não informada"}<br />
+                  <span className="text-xs">{c.location_label} • hot {c.hot_score} • {c.hot_reasons?.join(", ")}</span><br />
                   {(() => { const cta = getHotCta(c); return cta ? (cta.href.startsWith("/simulados/") ? <Link href={cta.href} className="text-violet-600 underline">{cta.label}</Link> : <a href={cta.href} target="_blank" rel="noreferrer" className="text-violet-600 underline">{cta.label}</a>) : null; })()}
                 </div>
               </Popup>

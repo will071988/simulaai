@@ -7,6 +7,7 @@ import { isSafeUrl } from "./security";
 import { ExtractConcursoSchema } from "./schemas";
 import { syncConcursoFromDocument } from "./syncConcurso";
 import { recalculateHotScores } from "./recalculateHotScores";
+import { deterministicIdentity, enrichDocument } from "./enrichment";
 
 const MAX_AI_PER_RUN = Number(process.env.MAX_AI_REQUESTS_PER_RUN || 30);
 
@@ -104,9 +105,9 @@ export async function runCollector(externalRunId?: string): Promise<{ runId: str
         if (aiProcessed < MAX_AI_PER_RUN) {
           const aiRes = await generateWithFallback<{ orgao: string | null; banca: string | null; vagas: number | null; salario?: number | null; prova_data?: string | null; status: string | null; evidence?: unknown }>({
             taskType: "EXTRACT_CONCURSO",
-            prompt: `Extraia concurso. Retorne JSON {orgao,banca,vagas,salario,prova_data,status,evidence:{orgao,banca,vagas,salario,prova_data,status}} com evidence textual curto. Não invente localização nem valores ausentes. Se não houver, null. Prompt v2.`,
+            prompt: `Extraia concurso. Retorne JSON {orgao,banca,vagas,salario,inscricao_inicio,inscricao_fim,prova_data,cadastro_reserva,cargos,escolaridade,scope,state_code,city,status,evidence:{...}}. Evidence deve conter trechos literais do texto. Não invente fatos, localização ou valores ausentes. Prompt v3.`,
             input: { title: doc.title, snippet: raw.slice(0, 4000) },
-            promptVersion: "extract_concurso_v1",
+            promptVersion: "extract_concurso_v3",
           }, { validate: (d) => ExtractConcursoSchema.safeParse(d).success });
           if (aiRes.ok && aiRes.data) {
             const parsed = ExtractConcursoSchema.safeParse(aiRes.data);
@@ -116,7 +117,7 @@ export async function runCollector(externalRunId?: string): Promise<{ runId: str
               metadata.ai_model = aiRes.model;
               status = "PROCESSED";
               aiProcessed++;
-              try { await syncConcursoFromDocument(svc, doc, parsed.data, doc.tier); } catch (e) {
+              try { await syncConcursoFromDocument(svc, { ...doc, rawText: raw }, parsed.data, doc.tier); } catch (e) {
                 errors++;
                 const msg = e instanceof Error ? e.message : "ERR";
                 metadata.sync_error = msg;
@@ -128,6 +129,11 @@ export async function runCollector(externalRunId?: string): Promise<{ runId: str
               aiPending++;
             }
           } else if (aiRes.errorCode === "BUDGET_EXCEEDED" || aiRes.degraded) {
+            const identity = deterministicIdentity(doc.title, doc.sourceName);
+            const facts = enrichDocument(doc.title, raw);
+            if (identity.orgao && identity.banca) {
+              try { await syncConcursoFromDocument(svc, { ...doc, rawText: raw }, { orgao: identity.orgao, banca: identity.banca, vagas: facts.vagas, salario: facts.salario, inscricao_inicio: facts.inscricao_inicio, inscricao_fim: facts.inscricao_fim, prova_data: facts.prova_data, cadastro_reserva: facts.cadastro_reserva, cargos: facts.cargos, escolaridade: facts.escolaridade as ("FUNDAMENTAL" | "MEDIO" | "TECNICO" | "SUPERIOR")[], scope: facts.scope as "NACIONAL" | "ESTADUAL" | "MUNICIPAL" | "REGIONAL" | null, state_code: facts.state_code, city: facts.city, status: null, evidence: {} }, doc.tier); } catch { errors++; }
+            }
             status = "AI_PENDING";
             aiPending++;
           } else {

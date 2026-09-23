@@ -18,7 +18,8 @@ function normalizeBanca(v: string | null): string | null {
   return v.trim().slice(0, 50);
 }
 
-import { calcHotScore } from "./hotScore";
+import { calcHotScoreWithReasons } from "./hotScore";
+import { enrichDocument, logicalKey, valueHash, type Evidence } from "./enrichment";
 
 type Location = { scope: string | null; state_code: string | null; city: string | null; latitude: number | null; longitude: number | null; label: string | null; confidence: number };
 
@@ -45,7 +46,7 @@ export function resolveLocation(orgao: string, title: string): Location {
 
 export async function syncConcursoFromDocument(
   svc: SupabaseClient,
-  doc: { title: string; canonicalUrl: string },
+  doc: { title: string; canonicalUrl: string; sourceName?: string; rawText?: string; documentId?: string | null },
   extracted: ExtractConcurso,
   tier: number
 ): Promise<number | null> {
@@ -53,11 +54,33 @@ export async function syncConcursoFromDocument(
   const orgao = normalizeOrgao(extracted.orgao);
   const banca = normalizeBanca(extracted.banca);
   if (!orgao || !banca) return null;
-  const loc = resolveLocation(orgao, doc.title);
-  const hot = calcHotScore({ status: extracted.status, vagas: extracted.vagas, salario: extracted.salario, prova_data: extracted.prova_data, tier });
-  const { error } = await svc
-    .from("concursos")
-    .upsert({ orgao, titulo: doc.title.slice(0, 200), banca, vagas: extracted.vagas, salario: extracted.salario ?? null, prova_data: extracted.prova_data ?? null, status: extracted.status || "previsto", edital_url: doc.canonicalUrl, scope: loc.scope, state_code: loc.state_code, city: loc.city, latitude: loc.latitude, longitude: loc.longitude, location_label: loc.label, hot_score: hot }, { onConflict: "edital_url" });
-  if (error) throw new Error(`syncConcurso upsert: ${error.message}`);
+  const deterministic = enrichDocument(doc.title, doc.rawText || "");
+  const loc = deterministic.scope ? { scope: deterministic.scope, state_code: deterministic.state_code, city: deterministic.city, latitude: null, longitude: null, label: deterministic.location_label } : resolveLocation(orgao, doc.title);
+  const values = { vagas: deterministic.vagas ?? extracted.vagas, salario: deterministic.salario ?? extracted.salario ?? null, prova_data: deterministic.prova_data ?? extracted.prova_data ?? null, inscricao_inicio: deterministic.inscricao_inicio, inscricao_fim: deterministic.inscricao_fim, cadastro_reserva: deterministic.cadastro_reserva, cargos: deterministic.cargos, escolaridade: deterministic.escolaridade };
+  const hot = calcHotScoreWithReasons({ status: extracted.status, vagas: values.vagas, salario: values.salario, prova_data: values.prova_data, inscricao_inicio: values.inscricao_inicio, inscricao_fim: values.inscricao_fim, tier });
+  const key = logicalKey(orgao, banca, doc.title);
+  const { data: matched } = await svc.from("concursos").select("id,orgao,banca,titulo,vagas,salario,prova_data,inscricao_inicio,inscricao_fim,status").eq("logical_key", key).maybeSingle();
+  const payload = { orgao, titulo: doc.title.slice(0, 200), banca, ...values, status: extracted.status || "previsto", edital_url: doc.canonicalUrl, scope: loc.scope, state_code: loc.state_code, city: loc.city, latitude: loc.latitude, longitude: loc.longitude, location_label: loc.label, logical_key: key, hot_score: hot.score, hot_reasons: hot.reasons, updated_at: new Date().toISOString(), quality_status: tier === 1 && deterministic.evidence.length >= 3 ? "VERIFIED" : "PARTIAL" };
+  const result = matched?.id ? await svc.from("concursos").update(payload).eq("id", matched.id).select("id").single() : await svc.from("concursos").upsert(payload, { onConflict: "edital_url" }).select("id").single();
+  if (result.error || !result.data) throw new Error(`syncConcurso upsert: ${result.error?.message}`);
+  const evidence: Evidence[] = [
+    { field: "orgao", value: orgao, evidence: doc.title, confidence: 0.75 },
+    { field: "banca", value: banca, evidence: doc.title, confidence: 0.7 },
+    { field: "titulo", value: doc.title, evidence: doc.title, confidence: 0.9 },
+    ...deterministic.evidence,
+  ];
+  for (const item of evidence) await svc.from("concurso_field_evidence").upsert({ concurso_id: result.data.id, field_name: item.field, value_json: item.value, value_hash: valueHash(item.value), source_url: doc.canonicalUrl, source_name: doc.sourceName || null, source_tier: tier, document_id: doc.documentId || null, evidence_text: item.evidence, confidence: Math.min(item.confidence, tier === 1 ? 1 : 0.7) }, { onConflict: "concurso_id,field_name,source_url,value_hash" });
+  if (matched) {
+    const tracked: Record<string, unknown> = { orgao, banca, titulo: doc.title.slice(0, 200), ...values, status: extracted.status || "previsto" };
+    let conflicted = false;
+    for (const [field, nextValue] of Object.entries(tracked)) {
+      const oldValue = (matched as Record<string, unknown>)[field];
+      if (oldValue == null || nextValue == null || JSON.stringify(oldValue) === JSON.stringify(nextValue)) continue;
+      const { data: prior } = await svc.from("concurso_field_evidence").select("source_tier,value_json").eq("concurso_id", result.data.id).eq("field_name", field).order("source_tier", { ascending: true }).limit(1).maybeSingle();
+      if (prior && prior.source_tier === tier && JSON.stringify(prior.value_json) !== JSON.stringify(nextValue)) conflicted = true;
+      await svc.from("concurso_changes").insert({ concurso_id: result.data.id, field_name: field, old_value: oldValue, new_value: nextValue, source_url: doc.canonicalUrl });
+    }
+    if (conflicted) await svc.from("concursos").update({ quality_status: "CONFLICTED" }).eq("id", result.data.id);
+  }
   return tier === 1 ? 0.95 : 0.7;
 }
