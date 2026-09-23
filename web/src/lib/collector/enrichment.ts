@@ -13,7 +13,7 @@ export function logicalKey(orgao: string, banca: string | null, title: string) {
 
 export function deterministicIdentity(title: string, sourceName: string): { orgao: string | null; banca: string | null } {
   const cleanTitle = title.replace(/\b20\d{2}\b/g, "").split(/\s+[|•-]\s+/)[0].trim();
-  if (!cleanTitle || /^(para candidatos|contatos|publica[cç][oõ]es|avalia[cç][oõ]es|concursos|centros de pesquisa)$/i.test(cleanTitle) || !/(concurso|edital|ag[eê]ncia|prefeitura|pol[ií]cia|tribunal|secretaria|universidade|instituto|banco|federal|estadual)/i.test(cleanTitle)) return { orgao: null, banca: null };
+  if (!cleanTitle || /^(para candidatos|contatos|publica[cç][oõ]es|avalia[cç][oõ]es|concursos|centros de pesquisa)$/i.test(cleanTitle) || !/(PF|PRF|INSS|BACEN|Transpetro|PC-[A-Z]{2}|concurso|edital|ag[eê]ncia|prefeitura|pol[ií]cia|tribunal|secretaria|universidade|instituto|banco|federal|estadual)/i.test(cleanTitle)) return { orgao: null, banca: null };
   const orgao = cleanTitle.slice(0, 100) || null;
   const knownBanca = ["Cebraspe", "FGV", "FCC", "Cesgranrio", "Instituto AOCP"].find((name) => sourceName.toLowerCase().includes(name.toLowerCase()));
   return { orgao, banca: knownBanca || null };

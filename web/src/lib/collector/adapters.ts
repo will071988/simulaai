@@ -81,7 +81,7 @@ export class PCIAdapter implements CollectorSourceAdapter {
       const href = $(el).attr("href");
       if (!href) return;
       const url = toAbs(this.baseUrl, href);
-      if (!url || !url.includes("pciconcursos.com.br")) return;
+       if (!url || !url.includes("pciconcursos.com.br") || !new URL(url).pathname.startsWith("/concursos/") || new URL(url).pathname === "/concursos/") return;
       const title = $(el).text().trim().slice(0, 200);
       if (title.length < 10) return;
       docs.push({ sourceName: this.sourceName, sourceUrl: url, canonicalUrl: url, title, documentType: "HTML", tier: 2, sourceId: "" });
@@ -106,7 +106,7 @@ export class FGVAdapter implements CollectorSourceAdapter {
       const href = $(el).attr("href");
       if (!href) return;
       const url = toAbs(this.baseUrl, href);
-      if (!url || (!url.includes("/concursos") && !url.includes("fgv.br"))) return;
+       if (!url || !url.includes("/concursos/") || new URL(url).pathname === "/concursos/") return;
       const title = $(el).text().trim().slice(0, 200);
       if (title.length < 8) return;
       docs.push({ sourceName: this.sourceName, sourceUrl: url, canonicalUrl: url, title, documentType: "HTML", tier: 1, sourceId: "" });
@@ -131,7 +131,7 @@ export class AOCPAdapter implements CollectorSourceAdapter {
       const href = $(el).attr("href");
       if (!href) return;
       const url = toAbs(this.baseUrl, href);
-      if (!url || !url.includes("institutoaocp.org.br")) return;
+       if (!url || !url.includes("institutoaocp.org.br") || !new URL(url).pathname.includes("/concursos/") || new URL(url).pathname.includes("/status/")) return;
       const title = $(el).text().trim().slice(0, 200);
       if (title.length < 8) return;
       docs.push({ sourceName: this.sourceName, sourceUrl: url, canonicalUrl: url, title, documentType: "HTML", tier: 1, sourceId: "" });
