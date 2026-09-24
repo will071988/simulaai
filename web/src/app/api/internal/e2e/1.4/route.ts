@@ -8,7 +8,7 @@ import { supabaseService } from "@/lib/supabase-server";
 const PROJECT_REF = "ukwulespvvthyjqgrjfo";
 const ORIGINAL_URL = "https://conhecimento.fgv.br/concursos/pms2026";
 const RETIFICATION_URL = "https://conhecimento.fgv.br/sites/default/files/concursos/3-retificacao-do-edital-n-01-de-2026.pdf";
-const RETIFICATION_TITLE = "3ª Retificação do Edital nº 01 de 2026 - Prefeitura Municipal do Salvador";
+const RETIFICATION_TITLE = "3ª Retificação do Edital nº 01/2026 - Prefeitura Municipal do Salvador";
 
 type Contest = { id: string; orgao: string; banca: string | null; titulo: string; quality_status: string | null };
 
