@@ -56,6 +56,10 @@ export async function POST(req: Request) {
 
     const input = { title: RETIFICATION_TITLE, canonicalUrl: RETIFICATION_URL, sourceName: "FGV", rawText: parsedPdf.text, documentId, documentType: "RETIFICATION" };
     const extracted = { orgao: contestBefore.orgao, banca: contestBefore.banca, vagas: null, status: null, evidence: {} } as const;
+    const { data: priorRelationships } = await svc.from("concurso_documents").select("concurso_id").eq("source_url", RETIFICATION_URL).neq("concurso_id", contestBefore.id);
+    for (const row of priorRelationships || []) {
+      await svc.from("concurso_identity_aliases").update({ is_current: false }).eq("concurso_id", row.concurso_id).eq("alias_type", "EDITAL").eq("alias_value", "01/2026").eq("source_url", RETIFICATION_URL);
+    }
     await persistIdentityAliases(svc, contestBefore.id, [{ alias_type: "EDITAL", alias_value: "01/2026", source_name: "FGV", source_url: RETIFICATION_URL, confidence: 0.95 }]);
     await syncConcursoFromDocument(svc, input, extracted, 1);
     const firstCounts = await getCounts(svc, contestBefore.id);
