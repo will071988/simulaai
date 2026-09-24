@@ -61,6 +61,7 @@ export async function POST(req: Request) {
     const firstCounts = await getCounts(svc, contestBefore.id);
     await syncConcursoFromDocument(svc, input, extracted, 1);
     const secondCounts = await getCounts(svc, contestBefore.id);
+    const { data: allRelatedDocuments } = await svc.from("concurso_documents").select("concurso_id,collector_document_id,relationship_type,source_url").eq("source_url", RETIFICATION_URL);
     const { data: after, error: afterError } = await svc.from("concursos").select("id,quality_status").eq("id", contestBefore.id).maybeSingle();
     if (afterError || !after) throw afterError || new Error("contest disappeared after E2E");
     const contestAfter = after as Contest;
@@ -70,7 +71,7 @@ export async function POST(req: Request) {
     const sameEntity = contestBefore.id === contestAfter.id;
     const hasRetification = secondCounts.documents.some((row) => row.relationship_type === "RETIFICATION");
     const apiHasRawText = detail.data?.raw_text !== undefined;
-    if (!sameEntity || !hasRetification || contestAfter.quality_status === "CONFLICTED" || !idempotent || apiHasRawText) return NextResponse.json({ ok: false, error: "persistent E2E assertions failed", diagnostics: { sameEntity, hasRetification, qualityStatus: contestAfter.quality_status, idempotent, apiStatus: detailResponse.status, apiHasRawText, first: { aliases: firstCounts.aliases.length, documents: firstCounts.documents.length, changes: firstCounts.changes.length }, second: { aliases: secondCounts.aliases.length, documents: secondCounts.documents.length, changes: secondCounts.changes.length } } }, { status: 500 });
+    if (!sameEntity || !hasRetification || contestAfter.quality_status === "CONFLICTED" || !idempotent || apiHasRawText) return NextResponse.json({ ok: false, error: "persistent E2E assertions failed", diagnostics: { sameEntity, hasRetification, qualityStatus: contestAfter.quality_status, idempotent, apiStatus: detailResponse.status, apiHasRawText, first: { aliases: firstCounts.aliases.length, documents: firstCounts.documents.length, changes: firstCounts.changes.length }, second: { aliases: secondCounts.aliases.length, documents: secondCounts.documents.length, changes: secondCounts.changes.length }, relatedDocuments: allRelatedDocuments || [] } }, { status: 500 });
     return NextResponse.json({ ok: true, projectRef: PROJECT_REF, concursoIdBefore: contestBefore.id, concursoIdAfter: contestAfter.id, sameEntity: contestBefore.id === contestAfter.id, relationship: "RETIFICATION", aliasCount: secondCounts.aliases.length, documentCount: secondCounts.documents.length, changeCount: secondCounts.changes.length, qualityStatus: contestAfter.quality_status, idempotent, apiDetail: { status: detailResponse.status, aliases: detail.data?.identity_aliases?.length || 0, documents: detail.data?.documents?.length || 0, evidence: detail.data?.evidence?.length || 0, raw_text: false } });
   } catch (error) {
     return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "E2E_FAILED" }, { status: 500 });
