@@ -20,13 +20,27 @@ function normalizeBanca(v: string | null): string | null {
 
 import { calcHotScoreWithReasons } from "./hotScore";
 import { enrichDocument, valueHash, type Evidence } from "./enrichment";
-import { resolveField } from "./fieldResolver";
+import { resolveField, type FieldEvidence } from "./fieldResolver";
 import { extractIdentitySignals, scoreEntity, stableEntityKey, type ContestIdentity } from "./entityResolution";
 import { aliasesFromIdentity, aliasesFromText, findAliasCandidates, persistIdentityAliases, type IdentityAlias } from "./identityAliases";
 import { classifyDocumentRelationship, type DocumentRelationship } from "./documentRelationship";
 
 type Location = { scope: string | null; state_code: string | null; city: string | null; latitude: number | null; longitude: number | null; label: string | null; confidence: number };
 type ContestRow = { id: string; orgao: string; banca: string | null; titulo: string; cargos?: string[] | null; escolaridade?: string[] | null; edital_number?: string | null; process_number?: string | null; official_slug?: string | null; official_source?: string | null; cargo_key?: string | null; cargo_group_key?: string | null; [key: string]: unknown };
+export type TrackedFieldDecision = { decision: "ACCEPT_NEW" | "KEEP_CURRENT" | "CONFLICT"; conflict: boolean; resolvedValue: unknown; isAmendment: boolean };
+export function resolveIncomingFields(current: Record<string, unknown>, incoming: Record<string, unknown>, evidenceByField: Record<string, FieldEvidence[]>, tier: number, relationship: DocumentRelationship) {
+  const resolved = { ...incoming };
+  const fieldDecisions: Record<string, TrackedFieldDecision> = {};
+  const isAmendment = relationship === "RETIFICATION" || relationship === "REPUBLICATION" || relationship === "REOPENING";
+  let conflicted = false;
+  for (const [field, value] of Object.entries(incoming)) {
+    const decision = resolveField(current[field], value, { tier, observedAt: new Date().toISOString(), isAmendment }, evidenceByField[field] || []);
+    resolved[field] = decision.resolvedValue;
+    fieldDecisions[field] = { decision: decision.decision, conflict: decision.conflict, resolvedValue: decision.resolvedValue, isAmendment };
+    conflicted ||= decision.decision === "CONFLICT" || (decision.conflict && decision.decision !== "ACCEPT_NEW");
+  }
+  return { resolved, fieldDecisions, conflicted };
+}
 function candidateToIdentity(candidate: ContestRow): ContestIdentity { return { ...extractIdentitySignals({ title: candidate.titulo, url: candidate.official_slug ? `https://candidate.invalid/concursos/${candidate.official_slug}` : "https://candidate.invalid/", orgao: candidate.orgao, banca: candidate.banca, cargos: candidate.cargos, escolaridade: candidate.escolaridade }), editalNumber: candidate.edital_number || null, processNumber: candidate.process_number || null, officialSlug: candidate.official_slug || null, officialSource: candidate.official_source || null, cargoKey: candidate.cargo_key || null, cargoGroupKey: candidate.cargo_group_key || null }; }
 
 const locationMap: Record<string, Location> = {
@@ -91,12 +105,17 @@ export async function syncConcursoFromDocument(
   }
   const incoming: Record<string, unknown> = { orgao, banca, titulo: doc.title.slice(0, 200), ...values, status: extracted.status || "previsto", scope: loc.scope, state_code: loc.state_code, city: loc.city };
   let conflicted = false;
-  if (matched) for (const [field, value] of Object.entries(incoming)) {
-    const { data: evidence } = await svc.from("concurso_field_evidence").select("value_json,source_tier,observed_at,source_url,evidence_text").eq("concurso_id", matched.id).eq("field_name", field);
-    const isAmendment = relationship.relationship === "RETIFICATION" || relationship.relationship === "REPUBLICATION" || relationship.relationship === "REOPENING";
-    const decision = resolveField((matched as Record<string, unknown>)[field], value, { tier, observedAt: new Date().toISOString(), isAmendment }, evidence || []);
-    incoming[field] = decision.resolvedValue;
-    conflicted ||= decision.conflict && !(tier === 1 && isAmendment && decision.decision === "ACCEPT_NEW");
+  let fieldDecisions: Record<string, TrackedFieldDecision> = {};
+  if (matched) {
+    const evidenceByField: Record<string, FieldEvidence[]> = {};
+    for (const field of Object.keys(incoming)) {
+      const { data: evidence } = await svc.from("concurso_field_evidence").select("value_json,source_tier,observed_at,source_url,evidence_text").eq("concurso_id", matched.id).eq("field_name", field);
+      evidenceByField[field] = (evidence || []) as FieldEvidence[];
+    }
+    const resolvedFields = resolveIncomingFields(matched as Record<string, unknown>, incoming, evidenceByField, tier, relationship.relationship);
+    Object.assign(incoming, resolvedFields.resolved);
+    fieldDecisions = resolvedFields.fieldDecisions;
+    conflicted = resolvedFields.conflicted;
   }
   const payload = { ...incoming, edital_url: doc.canonicalUrl, latitude: loc.latitude, longitude: loc.longitude, location_label: loc.label, logical_key: key || `TEMP:${valueHash(doc.canonicalUrl)}`, edital_number: identity.editalNumber, process_number: identity.processNumber, official_slug: identity.officialSlug, official_source: identity.officialSource, cargo_key: identity.cargoKey, cargo_group_key: identity.cargoGroupKey, hot_score: hot.score, hot_reasons: hot.reasons, updated_at: new Date().toISOString(), quality_status: conflicted ? "CONFLICTED" : tier === 1 && deterministic.evidence.length >= 3 ? "VERIFIED" : "PARTIAL" };
   const result = matched?.id ? await svc.from("concursos").update(payload).eq("id", matched.id).select("id").single() : await svc.from("concursos").upsert(payload, { onConflict: "edital_url" }).select("id").single();
@@ -104,7 +123,10 @@ export async function syncConcursoFromDocument(
   const persistedRelationship: DocumentRelationship = matched ? relationship.relationship : "ORIGINAL";
   console.info(JSON.stringify({ event: "relationship_detected", relationship: persistedRelationship, confidence: relationship.confidence, reasons: relationship.reasons, hardConflicts: relationship.hardConflicts }));
   await persistIdentityAliases(svc, result.data.id, incomingAliases);
-  if (doc.documentId) await svc.from("concurso_documents").upsert({ concurso_id: result.data.id, collector_document_id: doc.documentId, document_type: doc.documentType || null, relationship_type: persistedRelationship, source_url: doc.canonicalUrl, source_name: doc.sourceName || null, published_at: doc.publishedAt || null, is_current: true }, { onConflict: "collector_document_id" });
+  if (doc.documentId) {
+    const { error } = await svc.from("concurso_documents").upsert({ concurso_id: result.data.id, collector_document_id: doc.documentId, document_type: doc.documentType || null, relationship_type: persistedRelationship, source_url: doc.canonicalUrl, source_name: doc.sourceName || null, published_at: doc.publishedAt || null, is_current: true }, { onConflict: "collector_document_id" });
+    if (error) throw new Error(`persist document relationship: ${error.message}`);
+  }
   if (possibleDuplicate && possibleDuplicate.id !== result.data.id) await svc.from("concurso_duplicate_candidates").upsert({ concurso_a_id: possibleDuplicate.id, concurso_b_id: result.data.id, score: possibleDuplicate.score, reason: possibleDuplicate.reason, hard_conflicts: possibleDuplicate.hardConflicts, identity_signals: identity, status: "POSSIBLE_DUPLICATE" }, { onConflict: "concurso_a_id,concurso_b_id" });
   const evidence: Evidence[] = [
     { field: "orgao", value: orgao, evidence: doc.title, confidence: 0.75 },
@@ -119,9 +141,10 @@ export async function syncConcursoFromDocument(
     for (const [field, nextValue] of Object.entries(tracked)) {
       const oldValue = (matched as Record<string, unknown>)[field];
       if (oldValue == null || nextValue == null || JSON.stringify(oldValue) === JSON.stringify(nextValue)) continue;
-      const { data: prior } = await svc.from("concurso_field_evidence").select("source_tier,value_json").eq("concurso_id", result.data.id).eq("field_name", field).order("source_tier", { ascending: true }).limit(1).maybeSingle();
-      if (prior && prior.source_tier === tier && JSON.stringify(prior.value_json) !== JSON.stringify(nextValue)) conflicted = true;
-      await svc.from("concurso_changes").insert({ concurso_id: result.data.id, field_name: field, old_value: oldValue, new_value: nextValue, source_url: doc.canonicalUrl, relationship_type: persistedRelationship });
+      const decision = fieldDecisions[field];
+      if (!decision || decision.decision !== "ACCEPT_NEW" || JSON.stringify(oldValue) === JSON.stringify(decision.resolvedValue)) continue;
+      const { error } = await svc.from("concurso_changes").insert({ concurso_id: result.data.id, field_name: field, old_value: oldValue, new_value: decision.resolvedValue, source_url: doc.canonicalUrl, relationship_type: persistedRelationship });
+      if (error) throw new Error(`persist concurso change: ${error.message}`);
     }
     if (conflicted) await svc.from("concursos").update({ quality_status: "CONFLICTED" }).eq("id", result.data.id);
   }

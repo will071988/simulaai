@@ -34,15 +34,20 @@ export function aliasesFromText(text: string, sourceName?: string, sourceUrl?: s
 }
 
 export async function findAliasCandidates(svc: SupabaseClient, aliases: IdentityAlias[]) {
-  const values = [...new Set(aliases.map((alias) => alias.alias_value))];
-  if (!values.length) return [] as { concurso_id: string; alias_type: AliasType; alias_value: string }[];
-  const { data, error } = await svc.from("concurso_identity_aliases").select("concurso_id,alias_type,alias_value").eq("is_current", true).in("alias_value", values);
-  if (error) throw new Error(`load aliases: ${error.message}`);
-  return (data || []) as { concurso_id: string; alias_type: AliasType; alias_value: string }[];
+  const pairs = [...new Map(aliases.map((alias) => [`${alias.alias_type}:${alias.alias_value}`, alias])).values()];
+  if (!pairs.length) return [] as { concurso_id: string; alias_type: AliasType; alias_value: string }[];
+  const results: { concurso_id: string; alias_type: AliasType; alias_value: string }[] = [];
+  for (const alias of pairs) {
+    const { data, error } = await svc.from("concurso_identity_aliases").select("concurso_id,alias_type,alias_value").eq("is_current", true).eq("alias_type", alias.alias_type).eq("alias_value", alias.alias_value);
+    if (error) throw new Error(`load aliases: ${error.message}`);
+    results.push(...((data || []) as { concurso_id: string; alias_type: AliasType; alias_value: string }[]));
+  }
+  return results;
 }
 
 export async function persistIdentityAliases(svc: SupabaseClient, concursoId: string, aliases: IdentityAlias[]) {
   for (const alias of aliases) {
-    await svc.from("concurso_identity_aliases").upsert({ ...alias, concurso_id: concursoId, source_name: alias.source_name || "", confidence: alias.confidence ?? 0.95, is_current: true }, { onConflict: "concurso_id,alias_type,alias_value,source_name" });
+    const { error } = await svc.from("concurso_identity_aliases").upsert({ ...alias, concurso_id: concursoId, source_name: alias.source_name || "", confidence: alias.confidence ?? 0.95, is_current: true }, { onConflict: "concurso_id,alias_type,alias_value,source_name" });
+    if (error) throw new Error(`persist identity alias: ${error.message}`);
   }
 }
