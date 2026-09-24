@@ -10,7 +10,7 @@ const ORIGINAL_URL = "https://conhecimento.fgv.br/concursos/pms2026";
 const RETIFICATION_URL = "https://conhecimento.fgv.br/sites/default/files/concursos/3-retificacao-do-edital-n-01-de-2026.pdf";
 const RETIFICATION_TITLE = "3ª Retificação do Edital nº 01 de 2026 - Prefeitura Municipal do Salvador";
 
-type Contest = { id: string; quality_status: string | null };
+type Contest = { id: string; orgao: string; banca: string | null; titulo: string; quality_status: string | null };
 
 function authorized(req: Request) {
   const expected = process.env.E2E_14_SECRET || "";
@@ -37,7 +37,7 @@ export async function POST(req: Request) {
   if (process.env.E2E_14_ENABLED !== "true" || process.env.VERCEL_ENV !== "production" || new URL(supabaseUrl).hostname !== `${PROJECT_REF}.supabase.co`) return NextResponse.json({ ok: false }, { status: 404 });
   try {
     const svc = supabaseService();
-    const { data: before, error: beforeError } = await svc.from("concursos").select("id,quality_status").eq("edital_url", ORIGINAL_URL).maybeSingle();
+    const { data: before, error: beforeError } = await svc.from("concursos").select("id,orgao,banca,titulo,quality_status").eq("edital_url", ORIGINAL_URL).maybeSingle();
     if (beforeError) throw beforeError;
     if (!before) throw new Error("authorized E2E requires the original contest to exist");
     const contestBefore = before as Contest;
@@ -55,7 +55,7 @@ export async function POST(req: Request) {
     }
 
     const input = { title: RETIFICATION_TITLE, canonicalUrl: RETIFICATION_URL, sourceName: "FGV", rawText: parsedPdf.text, documentId, documentType: "RETIFICATION" };
-    const extracted = { orgao: "Prefeitura Municipal do Salvador", banca: "FGV", vagas: null, status: null, evidence: {} } as const;
+    const extracted = { orgao: contestBefore.orgao, banca: contestBefore.banca, vagas: null, status: null, evidence: {} } as const;
     await persistIdentityAliases(svc, contestBefore.id, [{ alias_type: "EDITAL", alias_value: "01/2026", source_name: "FGV", source_url: RETIFICATION_URL, confidence: 0.95 }]);
     await syncConcursoFromDocument(svc, input, extracted, 1);
     const firstCounts = await getCounts(svc, contestBefore.id);
