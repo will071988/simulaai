@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { extractPdfText } from "@/lib/collector/http";
 import { syncConcursoFromDocument } from "@/lib/collector/syncConcurso";
 import { valueHash } from "@/lib/collector/enrichment";
+import { aliasesFromText, persistIdentityAliases } from "@/lib/collector/identityAliases";
 import { supabaseService } from "@/lib/supabase-server";
 
 const PROJECT_REF = "ukwulespvvthyjqgrjfo";
@@ -55,6 +56,7 @@ export async function POST(req: Request) {
 
     const input = { title: RETIFICATION_TITLE, canonicalUrl: RETIFICATION_URL, sourceName: "FGV", rawText: parsedPdf.text, documentId, documentType: "RETIFICATION" };
     const extracted = { orgao: "Prefeitura Municipal do Salvador", banca: "FGV", vagas: null, status: null, evidence: {} } as const;
+    await persistIdentityAliases(svc, contestBefore.id, aliasesFromText(RETIFICATION_TITLE, "FGV", RETIFICATION_URL));
     await syncConcursoFromDocument(svc, input, extracted, 1);
     const firstCounts = await getCounts(svc, contestBefore.id);
     await syncConcursoFromDocument(svc, input, extracted, 1);
