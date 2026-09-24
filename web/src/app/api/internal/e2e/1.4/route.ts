@@ -12,16 +12,14 @@ const RETIFICATION_TITLE = "3ª Retificação do Edital nº 01 de 2026 - Prefeit
 
 type Contest = { id: string; quality_status: string | null };
 
-function configuredForProduction(req: Request) {
-  if (process.env.E2E_14_ENABLED !== "true" || process.env.VERCEL_ENV !== "production") return false;
+function authorized(req: Request) {
   const expected = process.env.E2E_14_SECRET || "";
   const received = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") || "";
   if (!expected || received.length !== expected.length) return false;
   let mismatch = 0;
   for (let index = 0; index < expected.length; index++) mismatch |= expected.charCodeAt(index) ^ received.charCodeAt(index);
   if (mismatch !== 0) return false;
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-  return new URL(url).hostname === `${PROJECT_REF}.supabase.co`;
+  return true;
 }
 
 async function getCounts(svc: ReturnType<typeof supabaseService>, concursoId: string) {
@@ -34,7 +32,9 @@ async function getCounts(svc: ReturnType<typeof supabaseService>, concursoId: st
 }
 
 export async function POST(req: Request) {
-  if (!configuredForProduction(req)) return NextResponse.json({ ok: false }, { status: 404 });
+  if (!authorized(req)) return NextResponse.json({ ok: false }, { status: 403 });
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+  if (process.env.E2E_14_ENABLED !== "true" || process.env.VERCEL_ENV !== "production" || new URL(supabaseUrl).hostname !== `${PROJECT_REF}.supabase.co`) return NextResponse.json({ ok: false }, { status: 404 });
   try {
     const svc = supabaseService();
     const { data: before, error: beforeError } = await svc.from("concursos").select("id,quality_status").eq("edital_url", ORIGINAL_URL).maybeSingle();
