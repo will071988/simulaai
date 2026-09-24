@@ -3,7 +3,6 @@ import { extractPdfText } from "@/lib/collector/http";
 import { syncConcursoFromDocument } from "@/lib/collector/syncConcurso";
 import { valueHash } from "@/lib/collector/enrichment";
 import { supabaseService } from "@/lib/supabase-server";
-import { isCronAuthorized } from "@/lib/collector/cronAuth";
 
 const PROJECT_REF = "ukwulespvvthyjqgrjfo";
 const ORIGINAL_URL = "https://conhecimento.fgv.br/concursos/pms2026";
@@ -14,7 +13,12 @@ type Contest = { id: string; quality_status: string | null };
 
 function configuredForProduction(req: Request) {
   if (process.env.E2E_14_ENABLED !== "true" || process.env.VERCEL_ENV !== "production") return false;
-  if (!isCronAuthorized(req)) return false;
+  const expected = process.env.E2E_14_SECRET || "";
+  const received = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") || "";
+  if (!expected || received.length !== expected.length) return false;
+  let mismatch = 0;
+  for (let index = 0; index < expected.length; index++) mismatch |= expected.charCodeAt(index) ^ received.charCodeAt(index);
+  if (mismatch !== 0) return false;
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
   return new URL(url).hostname === `${PROJECT_REF}.supabase.co`;
 }
