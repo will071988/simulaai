@@ -30,14 +30,28 @@ async function main() {
     const { data: collectorDocument, error: documentError } = await svc.from("collector_documents").select("id").eq("canonical_url", updateUrl).maybeSingle();
     assert.equal(documentError, null, documentError?.message);
     assert.ok(collectorDocument?.id, "retification collector document must already be ingested");
-    await syncConcursoFromDocument(svc, { title: "3ª Retificação do Edital nº 01 de 2026 - Prefeitura Municipal do Salvador", canonicalUrl: updateUrl, sourceName: "FGV", rawText: updatePdf.text, documentId: collectorDocument.id, documentType: "RETIFICATION" }, { orgao: "Prefeitura Municipal do Salvador", banca: "FGV", vagas: null, status: null, evidence: {} }, 1);
-    const { data: after } = await svc.from("concursos").select("id").eq("edital_url", originalUrl).maybeSingle();
+    const input = { title: "3ª Retificação do Edital nº 01 de 2026 - Prefeitura Municipal do Salvador", canonicalUrl: updateUrl, sourceName: "FGV", rawText: updatePdf.text, documentId: collectorDocument.id, documentType: "RETIFICATION" };
+    const extracted = { orgao: "Prefeitura Municipal do Salvador", banca: "FGV", vagas: null, status: null, evidence: {} } as const;
+    await syncConcursoFromDocument(svc, input, extracted, 1);
+    const { count: aliasesBefore } = await svc.from("concurso_identity_aliases").select("id", { count: "exact", head: true }).eq("concurso_id", originalContest.id).eq("is_current", true);
+    const { count: documentsBefore } = await svc.from("concurso_documents").select("id", { count: "exact", head: true }).eq("concurso_id", originalContest.id);
+    const { count: changesBefore } = await svc.from("concurso_changes").select("id", { count: "exact", head: true }).eq("concurso_id", originalContest.id).eq("relationship_type", "RETIFICATION");
+    await syncConcursoFromDocument(svc, input, extracted, 1);
+    const { count: aliasesAfter } = await svc.from("concurso_identity_aliases").select("id", { count: "exact", head: true }).eq("concurso_id", originalContest.id).eq("is_current", true);
+    const { count: documentsAfter } = await svc.from("concurso_documents").select("id", { count: "exact", head: true }).eq("concurso_id", originalContest.id);
+    const { count: changesAfter } = await svc.from("concurso_changes").select("id", { count: "exact", head: true }).eq("concurso_id", originalContest.id).eq("relationship_type", "RETIFICATION");
+    const { data: after } = await svc.from("concursos").select("id").eq("id", originalContest.id).maybeSingle();
     assert.equal(after?.id, originalContest.id, "retification changed concurso_id");
     const { data: aliases } = await svc.from("concurso_identity_aliases").select("alias_type,alias_value").eq("concurso_id", originalContest.id).eq("is_current", true);
     const { data: documents } = await svc.from("concurso_documents").select("relationship_type,source_url").eq("concurso_id", originalContest.id).eq("source_url", updateUrl);
     assert.ok((aliases || []).length > 0);
     assert.ok((documents || []).some((document) => document.relationship_type === "RETIFICATION"));
-    console.log(JSON.stringify({ projectRef: "ukwulespvvthyjqgrjfo", concursoIdOriginal: originalContest.id, concursoIdAfter: after?.id, aliases, documents }));
+    const { data: quality } = await svc.from("concursos").select("quality_status").eq("id", originalContest.id).maybeSingle();
+    assert.notEqual(quality?.quality_status, "CONFLICTED");
+    assert.equal(aliasesBefore, aliasesAfter);
+    assert.equal(documentsBefore, documentsAfter);
+    assert.equal(changesBefore, changesAfter);
+    console.log(JSON.stringify({ projectRef: "ukwulespvvthyjqgrjfo", concursoIdOriginal: originalContest.id, concursoIdAfter: after?.id, aliases, documents, qualityStatus: quality?.quality_status, idempotent: true }));
   }
   console.log(JSON.stringify({ source: "FGV", originalUrl, updateUrl, pdfStatus: updatePdf.status, relationship: relationship.relationship, confidence: relationship.confidence, reasons: relationship.reasons }));
 }

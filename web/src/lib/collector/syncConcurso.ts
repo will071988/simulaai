@@ -23,10 +23,11 @@ import { enrichDocument, valueHash, type Evidence } from "./enrichment";
 import { resolveField, type FieldEvidence } from "./fieldResolver";
 import { extractIdentitySignals, scoreEntity, stableEntityKey, type ContestIdentity } from "./entityResolution";
 import { aliasesFromIdentity, aliasesFromText, findAliasCandidates, persistIdentityAliases, type IdentityAlias } from "./identityAliases";
+import { resolveCanonicalContestId, resolveCanonicalContestIds } from "./canonicalContest";
 import { classifyDocumentRelationship, type DocumentRelationship } from "./documentRelationship";
 
 type Location = { scope: string | null; state_code: string | null; city: string | null; latitude: number | null; longitude: number | null; label: string | null; confidence: number };
-type ContestRow = { id: string; orgao: string; banca: string | null; titulo: string; cargos?: string[] | null; escolaridade?: string[] | null; edital_number?: string | null; process_number?: string | null; official_slug?: string | null; official_source?: string | null; cargo_key?: string | null; cargo_group_key?: string | null; [key: string]: unknown };
+type ContestRow = { id: string; orgao: string; banca: string | null; titulo: string; cargos?: string[] | null; escolaridade?: string[] | null; edital_number?: string | null; process_number?: string | null; official_slug?: string | null; official_source?: string | null; cargo_key?: string | null; cargo_group_key?: string | null; edital_url?: string | null; [key: string]: unknown };
 export type TrackedFieldDecision = { decision: "ACCEPT_NEW" | "KEEP_CURRENT" | "CONFLICT"; conflict: boolean; resolvedValue: unknown; isAmendment: boolean };
 export function resolveIncomingFields(current: Record<string, unknown>, incoming: Record<string, unknown>, evidenceByField: Record<string, FieldEvidence[]>, tier: number, relationship: DocumentRelationship) {
   const resolved = { ...incoming };
@@ -82,9 +83,9 @@ export async function syncConcursoFromDocument(
   const incomingAliases = [...aliasesFromIdentity(identity, doc.sourceName, doc.canonicalUrl), ...aliasesFromText(`${doc.title}\n${doc.rawText || ""}`, doc.sourceName, doc.canonicalUrl)];
   const key = stableEntityKey(identity);
   let possibleDuplicate: { id: string; score: number; reason: string; hardConflicts: string[] } | null = null;
-  const selectContest = "id,orgao,banca,titulo,vagas,salario,prova_data,inscricao_inicio,inscricao_fim,cadastro_reserva,cargos,escolaridade,status,scope,state_code,city,edital_number,process_number,official_slug,official_source,cargo_key,cargo_group_key";
+  const selectContest = "id,orgao,banca,titulo,vagas,salario,prova_data,inscricao_inicio,inscricao_fim,cadastro_reserva,cargos,escolaridade,status,scope,state_code,city,edital_number,process_number,official_slug,official_source,cargo_key,cargo_group_key,edital_url,logical_key";
   const aliasRows = await findAliasCandidates(svc, incomingAliases);
-  const aliasContestIds = [...new Set(aliasRows.map((alias) => alias.concurso_id))];
+  const aliasContestIds = await resolveCanonicalContestIds(svc, aliasRows.map((alias) => alias.concurso_id));
   let aliasCandidate: ContestRow | null = null;
   if (aliasContestIds.length === 1) {
     const { data } = await svc.from("concursos").select(selectContest).eq("id", aliasContestIds[0]).maybeSingle();
@@ -92,10 +93,17 @@ export async function syncConcursoFromDocument(
   }
   const candidateAliases: IdentityAlias[] = aliasRows.map((alias) => ({ ...alias, source_name: "" }));
   let relationship = classifyDocumentRelationship({ title: doc.title, rawText: doc.rawText, incoming: identity, candidate: aliasCandidate ? candidateToIdentity(aliasCandidate) : null, candidateAliases });
-  let { data: matched } = aliasCandidate && relationship.relationship !== "NEW_CONTEST" && relationship.confidence >= 0.9 ? { data: aliasCandidate } : key ? await svc.from("concursos").select(selectContest).eq("logical_key", key).maybeSingle() : { data: null };
+  let { data: matched } = aliasCandidate && relationship.relationship !== "NEW_CONTEST" && relationship.confidence >= 0.9 ? { data: aliasCandidate } : key ? await svc.from("concursos").select(selectContest).eq("logical_key", key).is("merged_into_id", null).maybeSingle() : { data: null };
+  if (matched) {
+    const canonicalId = await resolveCanonicalContestId(svc, matched.id);
+    if (canonicalId !== matched.id) {
+      const { data: canonical } = await svc.from("concursos").select(selectContest).eq("id", canonicalId).maybeSingle();
+      matched = canonical as ContestRow | null;
+    }
+  }
   if (matched && !aliasCandidate) relationship = classifyDocumentRelationship({ title: doc.title, rawText: doc.rawText, incoming: identity, candidate: candidateToIdentity(matched), candidateAliases });
   if (!matched) {
-    const { data: candidates } = await svc.from("concursos").select(selectContest).limit(200);
+    const { data: candidates } = await svc.from("concursos").select(selectContest).is("merged_into_id", null).limit(200);
     const scored = (candidates || []).map((candidate) => ({ candidate, resolution: scoreEntity(candidateToIdentity(candidate), identity) })).sort((a, b) => b.resolution.score - a.resolution.score)[0];
     if (scored?.resolution.decision === "AUTO_MATCH") { matched = scored.candidate; relationship = classifyDocumentRelationship({ title: doc.title, rawText: doc.rawText, incoming: identity, candidate: candidateToIdentity(scored.candidate) }); }
     else if (scored?.resolution.decision === "POSSIBLE_DUPLICATE") {
@@ -117,7 +125,7 @@ export async function syncConcursoFromDocument(
     fieldDecisions = resolvedFields.fieldDecisions;
     conflicted = resolvedFields.conflicted;
   }
-  const payload = { ...incoming, edital_url: doc.canonicalUrl, latitude: loc.latitude, longitude: loc.longitude, location_label: loc.label, logical_key: key || `TEMP:${valueHash(doc.canonicalUrl)}`, edital_number: identity.editalNumber, process_number: identity.processNumber, official_slug: identity.officialSlug, official_source: identity.officialSource, cargo_key: identity.cargoKey, cargo_group_key: identity.cargoGroupKey, hot_score: hot.score, hot_reasons: hot.reasons, updated_at: new Date().toISOString(), quality_status: conflicted ? "CONFLICTED" : tier === 1 && deterministic.evidence.length >= 3 ? "VERIFIED" : "PARTIAL" };
+  const payload = { ...incoming, edital_url: matched?.edital_url || doc.canonicalUrl, latitude: loc.latitude, longitude: loc.longitude, location_label: loc.label, logical_key: matched?.logical_key || key || `TEMP:${valueHash(doc.canonicalUrl)}`, edital_number: identity.editalNumber || matched?.edital_number || null, process_number: identity.processNumber || matched?.process_number || null, official_slug: identity.officialSlug || matched?.official_slug || null, official_source: identity.officialSource || matched?.official_source || null, cargo_key: identity.cargoKey || matched?.cargo_key || null, cargo_group_key: identity.cargoGroupKey || matched?.cargo_group_key || null, hot_score: hot.score, hot_reasons: hot.reasons, updated_at: new Date().toISOString(), quality_status: conflicted ? "CONFLICTED" : tier === 1 && deterministic.evidence.length >= 3 ? "VERIFIED" : "PARTIAL" };
   const result = matched?.id ? await svc.from("concursos").update(payload).eq("id", matched.id).select("id").single() : await svc.from("concursos").upsert(payload, { onConflict: "edital_url" }).select("id").single();
   if (result.error || !result.data) throw new Error(`syncConcurso upsert: ${result.error?.message}`);
   const persistedRelationship: DocumentRelationship = matched ? relationship.relationship : "ORIGINAL";

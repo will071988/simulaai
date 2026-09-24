@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ContestIdentity } from "./entityResolution";
+import { resolveCanonicalContestIds } from "./canonicalContest";
 
 export type AliasType = "EDITAL" | "PROCESS" | "OFFICIAL_SLUG" | "OFFICIAL_URL" | "CARGO" | "CARGO_GROUP" | "EXTERNAL_ID";
 export type IdentityAlias = { alias_type: AliasType; alias_value: string; source_name?: string | null; source_url?: string | null; confidence?: number };
@@ -7,7 +8,7 @@ export type IdentityAlias = { alias_type: AliasType; alias_value: string; source
 export function normalizeBaseEditalNumber(value: string | null | undefined): string | null {
   if (!value) return null;
   const normalized = value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
-  const match = normalized.match(/\b(\d{1,3})\s*\/\s*(20\d{2})\b/);
+  const match = normalized.match(/\b(\d{1,3})\s*(?:\/|DE)\s*(20\d{2})\b/);
   return match ? `${match[1].padStart(2, "0")}/${match[2]}` : null;
 }
 
@@ -43,6 +44,11 @@ export async function findAliasCandidates(svc: SupabaseClient, aliases: Identity
     results.push(...((data || []) as { concurso_id: string; alias_type: AliasType; alias_value: string }[]));
   }
   return results;
+}
+
+export async function findCanonicalAliasContestIds(svc: SupabaseClient, aliases: IdentityAlias[]) {
+  const rows = await findAliasCandidates(svc, aliases);
+  return resolveCanonicalContestIds(svc, rows.map((row) => row.concurso_id));
 }
 
 export async function persistIdentityAliases(svc: SupabaseClient, concursoId: string, aliases: IdentityAlias[]) {
