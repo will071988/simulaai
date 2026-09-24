@@ -59,7 +59,7 @@ export async function POST(req: Request) {
     const firstCounts = await getCounts(svc, contestBefore.id);
     await syncConcursoFromDocument(svc, input, extracted, 1);
     const secondCounts = await getCounts(svc, contestBefore.id);
-    const { data: after, error: afterError } = await svc.from("concursos").select("id,quality_status").eq("edital_url", ORIGINAL_URL).maybeSingle();
+    const { data: after, error: afterError } = await svc.from("concursos").select("id,quality_status").eq("id", contestBefore.id).maybeSingle();
     if (afterError || !after) throw afterError || new Error("contest disappeared after E2E");
     const contestAfter = after as Contest;
     const detailResponse = await fetch(new URL(`/api/concursos/${contestAfter.id}`, req.url));
