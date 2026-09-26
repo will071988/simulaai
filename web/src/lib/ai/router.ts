@@ -43,23 +43,20 @@ async function logUsage(provider: string, model: string, taskType: string, succe
   } catch {}
 }
 
-async function budgetExceeded(): Promise<boolean> {
+async function reserveBudget(): Promise<boolean> {
   const maxDay = aiConfig.maxPerDay;
-  if (!maxDay || maxDay <= 0) return false;
+  if (!maxDay || maxDay <= 0) return true;
   try {
     const svc = supabaseService();
-    const since = new Date();
-    since.setUTCHours(0, 0, 0, 0);
-    const { count } = await svc.from("ai_usage_logs").select("id", { count: "exact", head: true }).gte("created_at", since.toISOString());
-    return (count || 0) >= maxDay;
+    const { data, error } = await svc.rpc("reserve_ai_daily_budget", { p_limit: maxDay });
+    if (error) return false;
+    return data === true;
   } catch { return false; }
 }
 
 export async function generateWithFallback<T>(req: AIRequest, opts?: { validate?: (d: unknown) => boolean }): Promise<AIResult<T> & { degraded?: boolean }> {
   if (process.env.COLLECTOR_ENABLED === "false") return { ok: false, provider: "disabled", model: "", latencyMs: 0, errorCode: "COLLECTOR_DISABLED", degraded: true };
   if (process.env.AI_ENABLED === "false") return { ok: false, provider: "disabled", model: "", latencyMs: 0, errorCode: "AI_DISABLED", degraded: true };
-  if (await budgetExceeded()) return { ok: false, provider: "budget", model: "", latencyMs: 0, errorCode: "BUDGET_EXCEEDED", degraded: true };
-
   const inputHash = hashInput(req.input, req.promptVersion, req.taskType);
   const cached = await getCached<T>(inputHash, req.promptVersion);
   if (cached) return { ok: true, provider: "cache", model: "cache", data: cached, latencyMs: 0, cached: true };
@@ -79,6 +76,7 @@ export async function generateWithFallback<T>(req: AIRequest, opts?: { validate?
     // single retry with backoff for 429
     let attempt = 0;
     while (attempt < 2) {
+      if (!(await reserveBudget())) return { ok: false, provider: "budget", model: "", latencyMs: 0, errorCode: "BUDGET_EXCEEDED", degraded: true };
       const res = await p.generate<T>(req);
       await logUsage(p.name, p.model, req.taskType, res.ok, res.latencyMs, res.errorCode, JSON.stringify(req.input).length, res.raw?.length);
       if (res.ok) {

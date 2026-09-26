@@ -33,7 +33,8 @@ export async function resolveCanonicalContestId(svc: SupabaseClient, id: string)
     seen.add(current);
     const { data, error } = await svc.from("concursos").select("id,merged_into_id").eq("id", current).maybeSingle();
     if (error) throw new Error(`resolve canonical contest: ${error.message}`);
-    if (!data?.merged_into_id) return current;
+    if (!data) throw new Error(`canonical contest not found: ${current}`);
+    if (!data.merged_into_id) return current;
     current = data.merged_into_id;
   }
   throw new Error(`canonical contest chain exceeds 50 links from ${id}`);

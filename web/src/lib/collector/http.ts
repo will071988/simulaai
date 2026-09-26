@@ -6,40 +6,62 @@ const MAX_SIZE_MB = Number(process.env.MAX_DOCUMENT_SIZE_MB || 20);
 const MAX_BYTES = MAX_SIZE_MB * 1024 * 1024;
 const MAX_REDIRECTS = 5;
 
-function isPrivateIP(ip: string): boolean {
-  if (ip === "127.0.0.1" || ip === "::1" || ip === "0.0.0.0") return true;
-  if (ip.startsWith("10.")) return true;
-  if (ip.startsWith("192.168.")) return true;
-  if (ip.startsWith("169.254.")) return true;
-  if (/^172\.(1[6-9]|2\d|3[0-1])\./.test(ip)) return true;
-  if (ip.startsWith("fc") || ip.startsWith("fd")) return true; // fc00::/7
-  if (ip.startsWith("fe80:")) return true;
-  if (ip === "::ffff:127.0.0.1") return true;
-  return false;
+export function isPrivateIP(input: string): boolean {
+  const ip = input.toLowerCase().split("%")[0];
+  const mapped = ip.match(/^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/)?.[1];
+  if (mapped) return isPrivateIP(mapped);
+  if (ip.includes(":")) {
+    const [head, tail] = ip.split("::");
+    const left = head ? head.split(":") : [];
+    const right = tail ? tail.split(":") : [];
+    const groups = [...left, ...Array(Math.max(0, 8 - left.length - right.length)).fill("0"), ...right].map((group) => Number.parseInt(group || "0", 16));
+    if (groups.length !== 8 || groups.some((group) => !Number.isInteger(group) || group < 0 || group > 0xffff)) return true;
+    if (groups.slice(0, 7).every((group) => group === 0) && (groups[7] === 0 || groups[7] === 1)) return true;
+    if ((groups[0] & 0xfe00) === 0xfc00 || (groups[0] & 0xffc0) === 0xfe80) return true;
+    if (groups.slice(0, 5).every((group) => group === 0) && groups[5] === 0xffff) {
+      return isPrivateIP(`${groups[6] >> 8}.${groups[6] & 255}.${groups[7] >> 8}.${groups[7] & 255}`);
+    }
+    return false;
+  }
+  const octets = ip.split(".").map(Number);
+  if (octets.length !== 4 || octets.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return false;
+  const [a, b, c] = octets;
+  if (a === 0 || a === 10 || a === 127) return true;
+  if (a === 100 && b >= 64 && b <= 127) return true;
+  if (a === 169 && b === 254) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && ((b === 0 && (c === 0 || c === 2)) || (b === 88 && c === 99) || b === 168)) return true;
+  if (a === 198 && (b === 18 || b === 19 || (b === 51 && c === 100))) return true;
+  if (a === 203 && b === 0 && c === 113) return true;
+  return a >= 224;
 }
 
-async function isSafeUrlWithDns(urlStr: string): Promise<boolean> {
-  if (!isSafeUrl(urlStr)) return false;
+type LookupAll = (hostname: string) => Promise<{ address: string; family: number }[]>;
+const lookupAll: LookupAll = (hostname) => dns.lookup(hostname, { all: true });
+
+export async function validateUrlWithDns(urlStr: string, lookup: LookupAll = lookupAll): Promise<{ safe: boolean; error?: string }> {
+  if (!isSafeUrl(urlStr)) return { safe: false, error: "SSRF_BLOCKED" };
   try {
-    const u = new URL(urlStr);
-    const host = u.hostname;
-    // skip DNS for known public hosts to save time? still check
-    const lookup = await dns.lookup(host).catch(() => null);
-    if (lookup && isPrivateIP(lookup.address)) return false;
+    const addresses = await lookup(new URL(urlStr).hostname);
+    if (!addresses.length) return { safe: false, error: "SSRF_DNS_VALIDATION_FAILED" };
+    if (addresses.some(({ address }) => isPrivateIP(address))) return { safe: false, error: "SSRF_BLOCKED" };
+    return { safe: true };
   } catch {
-    // if DNS fails, allow (maybe host not resolvable, will fail later)
+    return { safe: false, error: "SSRF_DNS_VALIDATION_FAILED" };
   }
-  return true;
 }
 
 export async function safeFetch(url: string, opts?: { allowedTypes?: string[]; timeoutMs?: number }): Promise<{ ok: boolean; status: number; text?: string; buffer?: Buffer; contentType?: string; error?: string }> {
-  if (!(await isSafeUrlWithDns(url))) return { ok: false, status: 0, error: "SSRF_BLOCKED" };
+  const initialValidation = await validateUrlWithDns(url);
+  if (!initialValidation.safe) return { ok: false, status: 0, error: initialValidation.error };
   let currentUrl = url;
   let redirects = 0;
   while (redirects <= MAX_REDIRECTS) {
     const controller = new AbortController();
     const t = setTimeout(() => controller.abort(), opts?.timeoutMs || 12000);
     try {
+      // Residual TOCTOU risk: Node fetch does not expose socket pinning to the validated DNS result.
+      // We fail closed on DNS errors/private answers and repeat validation for every redirect.
       const res = await fetch(currentUrl, {
         headers: { "User-Agent": "SimulaAi-Collector/1.0 (+https://simulaai-kappa.vercel.app)", Accept: "text/html,application/pdf,*/*" },
         signal: controller.signal,
@@ -50,7 +72,8 @@ export async function safeFetch(url: string, opts?: { allowedTypes?: string[]; t
         const loc = res.headers.get("location");
         if (!loc) return { ok: false, status: res.status, error: `HTTP_${res.status}` };
         const nextUrl = new URL(loc, currentUrl).toString();
-        if (!(await isSafeUrlWithDns(nextUrl))) return { ok: false, status: 0, error: "SSRF_BLOCKED_REDIRECT" };
+        const redirectValidation = await validateUrlWithDns(nextUrl);
+        if (!redirectValidation.safe) return { ok: false, status: 0, error: redirectValidation.error === "SSRF_DNS_VALIDATION_FAILED" ? redirectValidation.error : "SSRF_BLOCKED_REDIRECT" };
         currentUrl = nextUrl;
         redirects++;
         continue;
@@ -81,7 +104,8 @@ export async function safeFetch(url: string, opts?: { allowedTypes?: string[]; t
 export async function checkRobots(baseUrl: string, path: string): Promise<{ allowed: boolean; status: string }> {
   try {
     const robotsUrl = new URL("/robots.txt", baseUrl).toString();
-    if (!(await isSafeUrlWithDns(robotsUrl))) return { allowed: false, status: "SSRF_BLOCKED" };
+    const validation = await validateUrlWithDns(robotsUrl);
+    if (!validation.safe) return { allowed: false, status: validation.error || "SSRF_BLOCKED" };
     const res = await safeFetch(robotsUrl, { allowedTypes: ["text/plain"], timeoutMs: 5000 });
     if (!res.ok || !res.text) {
       if (res.error === "TIMEOUT") return { allowed: false, status: "ROBOTS_UNKNOWN" };
