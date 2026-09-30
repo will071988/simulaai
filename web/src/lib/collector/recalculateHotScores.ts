@@ -14,7 +14,7 @@ type ConcursoRow = {
 };
 
 export async function recalculateHotScores(svc: SupabaseClient): Promise<number> {
-  const { data, error } = await svc.from("concursos").select("id,status,vagas,salario,prova_data,inscricao_inicio,inscricao_fim,created_at,merged_into_id").is("merged_into_id", null);
+  const { data, error } = await svc.from("concursos").select("id,status,vagas,salario,prova_data,inscricao_inicio,inscricao_fim,created_at,merged_into_id").eq("is_publishable", true).is("merged_into_id", null);
   if (error) throw new Error(`load concursos for hot score: ${error.message}`);
 
   let updated = 0;

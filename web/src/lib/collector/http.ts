@@ -1,6 +1,7 @@
 import { isSafeUrl, validateContentType } from "./security";
 import crypto from "crypto";
 import dns from "node:dns/promises";
+import * as cheerio from "cheerio";
 
 const MAX_SIZE_MB = Number(process.env.MAX_DOCUMENT_SIZE_MB || 20);
 const MAX_BYTES = MAX_SIZE_MB * 1024 * 1024;
@@ -51,7 +52,12 @@ export async function validateUrlWithDns(urlStr: string, lookup: LookupAll = loo
   }
 }
 
-export async function safeFetch(url: string, opts?: { allowedTypes?: string[]; timeoutMs?: number }): Promise<{ ok: boolean; status: number; text?: string; buffer?: Buffer; contentType?: string; error?: string }> {
+export function matchesAllowedOrigin(url: string, allowedOrigin?: string): boolean {
+  try { return !allowedOrigin || new URL(url).origin === new URL(allowedOrigin).origin; } catch { return false; }
+}
+
+export async function safeFetch(url: string, opts?: { allowedTypes?: string[]; timeoutMs?: number; allowedOrigin?: string }): Promise<{ ok: boolean; status: number; text?: string; buffer?: Buffer; contentType?: string; error?: string }> {
+  if (!matchesAllowedOrigin(url, opts?.allowedOrigin)) return { ok: false, status: 0, error: "SOURCE_ORIGIN_MISMATCH" };
   const initialValidation = await validateUrlWithDns(url);
   if (!initialValidation.safe) return { ok: false, status: 0, error: initialValidation.error };
   let currentUrl = url;
@@ -67,11 +73,12 @@ export async function safeFetch(url: string, opts?: { allowedTypes?: string[]; t
         signal: controller.signal,
         redirect: "manual",
       });
-      clearTimeout(t);
       if (res.status >= 300 && res.status < 400) {
         const loc = res.headers.get("location");
         if (!loc) return { ok: false, status: res.status, error: `HTTP_${res.status}` };
         const nextUrl = new URL(loc, currentUrl).toString();
+        await res.body?.cancel();
+        if (!matchesAllowedOrigin(nextUrl, opts?.allowedOrigin)) return { ok: false, status: 0, error: "SOURCE_ORIGIN_MISMATCH" };
         const redirectValidation = await validateUrlWithDns(nextUrl);
         if (!redirectValidation.safe) return { ok: false, status: 0, error: redirectValidation.error === "SSRF_DNS_VALIDATION_FAILED" ? redirectValidation.error : "SSRF_BLOCKED_REDIRECT" };
         currentUrl = nextUrl;
@@ -83,19 +90,28 @@ export async function safeFetch(url: string, opts?: { allowedTypes?: string[]; t
       if (opts?.allowedTypes && !validateContentType(ct, opts.allowedTypes)) return { ok: false, status: res.status, error: "INVALID_CONTENT_TYPE" };
       const len = Number(res.headers.get("content-length") || 0);
       if (len > MAX_BYTES) return { ok: false, status: res.status, error: "TOO_LARGE" };
-      if (ct?.includes("pdf")) {
-        const ab = await res.arrayBuffer();
-        if (ab.byteLength > MAX_BYTES) return { ok: false, status: res.status, error: "TOO_LARGE" };
-        return { ok: true, status: res.status, buffer: Buffer.from(ab), contentType: ct };
+      const reader = res.body?.getReader();
+      const chunks: Uint8Array[] = [];
+      let size = 0;
+      if (reader) while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        size += value.byteLength;
+        if (size > MAX_BYTES) { await reader.cancel(); return { ok: false, status: res.status, error: "TOO_LARGE" }; }
+        chunks.push(value);
       }
-      const text = await res.text();
-      if (text.length > MAX_BYTES) return { ok: false, status: res.status, error: "TOO_LARGE" };
+      const buffer = Buffer.concat(chunks);
+      if (ct?.includes("pdf")) return { ok: true, status: res.status, buffer, contentType: ct };
+      const headerCharset = ct?.match(/charset\s*=\s*["']?([^\s;"']+)/i)?.[1];
+      const metaCharset = buffer.subarray(0, 4096).toString("ascii").match(/charset\s*=\s*["']?([^\s;"'/>]+)/i)?.[1];
+      const text = new TextDecoder(headerCharset || metaCharset || "utf-8").decode(buffer);
       return { ok: true, status: res.status, text, contentType: ct || undefined };
     } catch (e) {
-      clearTimeout(t);
       const msg = e instanceof Error ? e.message : "ERR";
       if (msg.includes("abort")) return { ok: false, status: 0, error: "TIMEOUT" };
       return { ok: false, status: 0, error: msg };
+    } finally {
+      clearTimeout(t);
     }
   }
   return { ok: false, status: 0, error: "TOO_MANY_REDIRECTS" };
@@ -147,18 +163,25 @@ export async function checkRobots(baseUrl: string, path: string): Promise<{ allo
 export function hashContent(content: string): string {
   return crypto.createHash("sha256").update(content).digest("hex");
 }
+export function stableHtmlText(html: string): string {
+  const $ = cheerio.load(html);
+  $("script,style,noscript,template,svg,meta,link").remove();
+  return $.root().text().replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim();
+}
 export function hashBuffer(buf: Buffer): string {
   return crypto.createHash("sha256").update(buf).digest("hex");
 }
 
 export async function extractPdfText(buffer: Buffer): Promise<{ text: string; status: string }> {
   try {
-    const pdfParseModule = await import("pdf-parse") as unknown as { default?: (b: Buffer) => Promise<{ text: string }> } & ((b: Buffer) => Promise<{ text: string }>);
-    const pdfParse = (pdfParseModule.default || pdfParseModule) as (b: Buffer) => Promise<{ text: string }>;
-    const data = await pdfParse(buffer);
-    const text = (data.text || "").trim();
-    if (!text || text.length < 50) return { text: "", status: "PARSE_FAILED_NO_TEXT" };
-    return { text: text.slice(0, 50000), status: "PARSED" };
+    const { PDFParse } = await import("pdf-parse");
+    const parser = new PDFParse({ data: new Uint8Array(buffer) });
+    try {
+      const data = await parser.getText();
+      const text = (data.text || "").trim();
+      if (!text || text.length < 50) return { text: "", status: "PARSE_FAILED_NO_TEXT" };
+      return { text, status: "PARSED" };
+    } finally { await parser.destroy(); }
   } catch {
     return { text: "", status: "PARSE_FAILED_NO_TEXT" };
   }

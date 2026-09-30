@@ -9,8 +9,28 @@ export interface CollectorSourceAdapter {
   discover(): Promise<DiscoveredDocument[]>;
 }
 
+export class CollectorDiscoveryError extends Error {
+  constructor(public code: string) { super(code); }
+}
+
+async function fetchDiscoveryPage(baseUrl: string, path: string, timeoutMs: number) {
+  const robots = await checkRobots(baseUrl, path);
+  if (!robots.allowed) throw new CollectorDiscoveryError(robots.status || "ROBOTS_BLOCKED");
+  const res = await safeFetch(new URL(path, baseUrl).toString(), { allowedTypes: ["text/html"], timeoutMs, allowedOrigin: baseUrl });
+  if (!res.ok || !res.text) throw new CollectorDiscoveryError(res.error || `HTTP_${res.status}`);
+  return res.text;
+}
+
 function toAbs(base: string, href: string): string | null {
   try { return new URL(href, base).toString(); } catch { return null; }
+}
+
+export function isOfficialSourceUrl(baseUrl: string, candidate: string, path: RegExp): boolean {
+  try {
+    const base = new URL(baseUrl);
+    const url = new URL(candidate, base);
+    return url.protocol === "https:" && url.origin === base.origin && !url.username && !url.password && path.test(url.pathname);
+  } catch { return false; }
 }
 
 export class CebraspeAdapter implements CollectorSourceAdapter {
@@ -18,11 +38,11 @@ export class CebraspeAdapter implements CollectorSourceAdapter {
   baseUrl = "https://www.cebraspe.org.br";
   tier = 1;
   async discover(): Promise<DiscoveredDocument[]> {
-    const robots = await checkRobots(this.baseUrl, "/concursos");
-    if (!robots.allowed) return [];
-    const res = await safeFetch(this.baseUrl + "/concursos", { allowedTypes: ["text/html"], timeoutMs: 10000 });
-    if (!res.ok || !res.text) return [];
-    const $ = cheerio.load(res.text);
+    // The no-slash endpoint currently redirects HTTPS -> HTTP -> HTTPS. Start
+    // at the canonical slash URL so the SSRF guard can keep rejecting scheme
+    // changes without making the official adapter unusable.
+    const html = await fetchDiscoveryPage(this.baseUrl, "/concursos/", 10000);
+    const $ = cheerio.load(html);
     const docs: DiscoveredDocument[] = [];
     const seen = new Set<string>();
     $("a").each((_, el) => {
@@ -30,7 +50,7 @@ export class CebraspeAdapter implements CollectorSourceAdapter {
       const href = $(el).attr("href");
       if (!href) return;
       const url = toAbs(this.baseUrl, href);
-      if (!url || !url.includes("/concursos/") || seen.has(url)) return;
+      if (!url || !isOfficialSourceUrl(this.baseUrl, url, /^\/concursos\//i) || seen.has(url)) return;
       seen.add(url);
       const title = $(el).text().trim().replace(/\s+/g, " ").slice(0, 200) || $(el).attr("title") || url;
       // generic discovery: any concurso, not filtered by known keywords
@@ -45,18 +65,15 @@ export class DOUAdapter implements CollectorSourceAdapter {
   baseUrl = "https://www.in.gov.br";
   tier = 1;
   async discover(): Promise<DiscoveredDocument[]> {
-    const robots = await checkRobots(this.baseUrl, "/web/dou");
-    if (!robots.allowed) return [];
-    const res = await safeFetch(this.baseUrl + "/web/dou/-/concurso", { allowedTypes: ["text/html"], timeoutMs: 8000 });
-    if (!res.ok || !res.text) return [];
-    const $ = cheerio.load(res.text);
+    const html = await fetchDiscoveryPage(this.baseUrl, "/web/dou/-/concurso", 8000);
+    const $ = cheerio.load(html);
     const docs: DiscoveredDocument[] = [];
     $("a").each((_, el) => {
       if (docs.length >= 6) return false;
       const href = $(el).attr("href");
-      if (!href || !href.includes("/web/dou")) return;
+      if (!href) return;
       const url = toAbs(this.baseUrl, href);
-      if (!url) return;
+      if (!url || !isOfficialSourceUrl(this.baseUrl, url, /^\/web\/dou(?:\/|$)/i)) return;
       const title = $(el).text().trim().slice(0, 200);
       if (!title || title.length < 8) return;
       docs.push({ sourceName: this.sourceName, sourceUrl: url, canonicalUrl: url, title, documentType: "HTML", tier: 1, sourceId: "" });
@@ -70,18 +87,15 @@ export class PCIAdapter implements CollectorSourceAdapter {
   baseUrl = "https://www.pciconcursos.com.br";
   tier = 2;
   async discover(): Promise<DiscoveredDocument[]> {
-    const robots = await checkRobots(this.baseUrl, "/");
-    if (!robots.allowed) return [];
-    const res = await safeFetch(this.baseUrl + "/concursos", { allowedTypes: ["text/html"], timeoutMs: 8000 });
-    if (!res.ok || !res.text) return [];
-    const $ = cheerio.load(res.text);
+    const html = await fetchDiscoveryPage(this.baseUrl, "/concursos", 8000);
+    const $ = cheerio.load(html);
     const docs: DiscoveredDocument[] = [];
     $("a").each((_, el) => {
       if (docs.length >= 6) return false;
       const href = $(el).attr("href");
       if (!href) return;
       const url = toAbs(this.baseUrl, href);
-       if (!url || !url.includes("pciconcursos.com.br") || !new URL(url).pathname.startsWith("/concursos/") || new URL(url).pathname === "/concursos/") return;
+      if (!url || !isOfficialSourceUrl(this.baseUrl, url, /^\/concursos\/.+/i)) return;
       const title = $(el).text().trim().slice(0, 200);
       if (title.length < 10) return;
       docs.push({ sourceName: this.sourceName, sourceUrl: url, canonicalUrl: url, title, documentType: "HTML", tier: 2, sourceId: "" });
@@ -95,18 +109,15 @@ export class FGVAdapter implements CollectorSourceAdapter {
   baseUrl = "https://conhecimento.fgv.br";
   tier = 1;
   async discover(): Promise<DiscoveredDocument[]> {
-    const robots = await checkRobots(this.baseUrl, "/concursos");
-    if (!robots.allowed) return [];
-    const res = await safeFetch(this.baseUrl + "/concursos", { allowedTypes: ["text/html"], timeoutMs: 10000 });
-    if (!res.ok || !res.text) return [];
-    const $ = cheerio.load(res.text);
+    const html = await fetchDiscoveryPage(this.baseUrl, "/concursos", 10000);
+    const $ = cheerio.load(html);
     const docs: DiscoveredDocument[] = [];
     $("a").each((_, el) => {
       if (docs.length >= 8) return false;
       const href = $(el).attr("href");
       if (!href) return;
       const url = toAbs(this.baseUrl, href);
-       if (!url || !url.includes("/concursos/") || new URL(url).pathname === "/concursos/") return;
+      if (!url || !isOfficialSourceUrl(this.baseUrl, url, /^\/concursos\/.+/i) || /nosso-portfolio/.test(new URL(url).pathname)) return;
       const title = $(el).text().trim().slice(0, 200);
       if (title.length < 8) return;
       docs.push({ sourceName: this.sourceName, sourceUrl: url, canonicalUrl: url, title, documentType: "HTML", tier: 1, sourceId: "" });
@@ -120,18 +131,15 @@ export class AOCPAdapter implements CollectorSourceAdapter {
   baseUrl = "https://www.institutoaocp.org.br";
   tier = 1;
   async discover(): Promise<DiscoveredDocument[]> {
-    const robots = await checkRobots(this.baseUrl, "/");
-    if (!robots.allowed) return [];
-    const res = await safeFetch(this.baseUrl, { allowedTypes: ["text/html"], timeoutMs: 10000 });
-    if (!res.ok || !res.text) return [];
-    const $ = cheerio.load(res.text);
+    const html = await fetchDiscoveryPage(this.baseUrl, "/", 10000);
+    const $ = cheerio.load(html);
     const docs: DiscoveredDocument[] = [];
     $("a").each((_, el) => {
       if (docs.length >= 8) return false;
       const href = $(el).attr("href");
       if (!href) return;
       const url = toAbs(this.baseUrl, href);
-       if (!url || !url.includes("institutoaocp.org.br") || !new URL(url).pathname.includes("/concursos/") || new URL(url).pathname.includes("/status/")) return;
+      if (!url || !isOfficialSourceUrl(this.baseUrl, url, /^\/concursos\//i) || new URL(url).pathname.includes("/status/")) return;
       const title = $(el).text().trim().slice(0, 200);
       if (title.length < 8) return;
       docs.push({ sourceName: this.sourceName, sourceUrl: url, canonicalUrl: url, title, documentType: "HTML", tier: 1, sourceId: "" });
@@ -140,4 +148,60 @@ export class AOCPAdapter implements CollectorSourceAdapter {
   }
 }
 
-export const adapters: CollectorSourceAdapter[] = [new CebraspeAdapter(), new DOUAdapter(), new PCIAdapter(), new FGVAdapter(), new AOCPAdapter()];
+export function parseSourceLinks(html: string, source: { name: string; baseUrl: string; tier: number; path: RegExp }): DiscoveredDocument[] {
+  const $ = cheerio.load(html);
+  const seen = new Set<string>();
+  const documents: DiscoveredDocument[] = [];
+  $("a[href]").each((_, element) => {
+    const href = $(element).attr("href");
+    if (!href) return;
+    const absolute = toAbs(source.baseUrl, href);
+    if (!absolute) return;
+    const url = new URL(absolute);
+    if (!isOfficialSourceUrl(source.baseUrl, url.href, source.path)) return;
+    url.hash = "";
+    const title = $(element).text().replace(/\s+/g, " ").trim();
+    if (title.length < 8 || seen.has(url.href)) return;
+    seen.add(url.href);
+    documents.push({ sourceId: "", sourceName: source.name, source: source.name, sourceUrl: url.href, url: url.href,
+      canonicalUrl: url.href, title: title.slice(0, 200), documentType: "HTML", documentTypeCandidate: "HTML", tier: source.tier,
+      metadata: { discoveryOnly: source.tier !== 1, adapter: source.name } });
+  });
+  return documents.slice(0, 12);
+}
+
+export class FCCAdapter implements CollectorSourceAdapter {
+  sourceName = "FCC";
+  baseUrl = "https://www.concursosfcc.com.br";
+  tier = 1;
+  async discover() {
+    return parseSourceLinks(await fetchDiscoveryPage(this.baseUrl, "/", 10000), { name: this.sourceName, baseUrl: this.baseUrl, tier: this.tier, path: /^\/concursos\/[^/]+\/index\.html$/i });
+  }
+}
+
+export class CesgranrioAdapter implements CollectorSourceAdapter {
+  sourceName = "Cesgranrio";
+  baseUrl = "https://www.cesgranrio.org.br";
+  tier = 1;
+  async discover() {
+    return parseSourceLinks(await fetchDiscoveryPage(this.baseUrl, "/concursos", 10000), { name: this.sourceName, baseUrl: this.baseUrl, tier: this.tier, path: /^\/concurso\/[^/]+\/?$/i });
+  }
+}
+
+export class JCAdapter implements CollectorSourceAdapter {
+  sourceName = "JC Concursos";
+  baseUrl = "https://jcconcursos.com.br";
+  tier = 2;
+  async discover() {
+    return parseSourceLinks(await fetchDiscoveryPage(this.baseUrl, "/concursos", 10000), { name: this.sourceName, baseUrl: this.baseUrl, tier: this.tier, path: /^\/(?:concurso|noticia\/concursos)\//i });
+  }
+}
+
+const registered: CollectorSourceAdapter[] = [new CebraspeAdapter(), new FGVAdapter(), new FCCAdapter(), new CesgranrioAdapter(), new AOCPAdapter(), new DOUAdapter(), new PCIAdapter(), new JCAdapter()];
+export const adapters: CollectorSourceAdapter[] = registered.map((adapter) => ({
+  sourceName: adapter.sourceName, baseUrl: adapter.baseUrl, tier: adapter.tier,
+  async discover() {
+    return (await adapter.discover()).map((doc) => ({ ...doc, source: doc.sourceName, url: doc.sourceUrl,
+      documentTypeCandidate: doc.documentType, metadata: { ...doc.metadata, adapter: adapter.sourceName, discoveryOnly: adapter.tier !== 1 } }));
+  },
+}));

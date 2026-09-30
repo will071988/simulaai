@@ -1,9 +1,10 @@
 import type { AIRequest, AIResult, AIProviderHealth } from "./types";
+import type { GenerationPermit } from "./generationBudget";
 
 export interface AIProvider {
   name: string;
   model: string;
-  generate<T>(req: AIRequest): Promise<AIResult<T>>;
+  generate<T>(req: AIRequest, permit?: GenerationPermit): Promise<AIResult<T>>;
   healthCheck(): Promise<AIProviderHealth>;
 }
 

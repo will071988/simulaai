@@ -1,0 +1,23 @@
+import "./validate-publication-policy";
+import "./validate-collector-observability";
+import "./validate-collector-idempotency";
+import assert from "node:assert/strict";
+import { enrichDocument } from "../src/lib/collector/enrichment";
+import { extractIdentitySignals, scoreEntity } from "../src/lib/collector/entityResolution";
+import { ExtractConcursoSchema } from "../src/lib/collector/schemas";
+import { isModelAllowed } from "../src/lib/ai/config";
+import { parseOpenRouterJson } from "../src/lib/ai/openrouter";
+import { hashContent, stableHtmlText } from "../src/lib/collector/http";
+
+assert.equal(enrichDocument("Publicação", "Publicado em 01/02/2026").prova_data, null);
+assert.deepEqual(enrichDocument("Concurso", "melhorar o funcionamento técnico das páginas").escolaridade, []);
+assert.deepEqual(enrichDocument("Concurso", "Requisito: curso técnico em enfermagem completo").escolaridade, ["TECNICO"]);
+const input = { title: "Edital 01/2026 Processo 02/2026", url: "https://example.org/edital", banca: "FGV" };
+assert.equal(scoreEntity(extractIdentitySignals({ ...input, orgao: "Órgão A" }), extractIdentitySignals({ ...input, orgao: "Órgão B" })).decision, "NEW_ENTITY");
+assert.equal(ExtractConcursoSchema.safeParse({ orgao: "A", banca: "FGV", vagas: -1, status: null }).success, false);
+assert.equal(isModelAllowed("qwen/qwen3.8-27b:free"), true);
+assert.equal(isModelAllowed("provider/model-paid"), false);
+assert.deepEqual(parseOpenRouterJson<{ ok: boolean }>('```json\n{"ok":true}\n```'), { ok: true });
+assert.throws(() => parseOpenRouterJson('[{"ok":true}]'));
+assert.equal(hashContent(stableHtmlText('<html><script nonce="one">x</script><main>Edital 01</main></html>')), hashContent(stableHtmlText('<html><script nonce="two">y</script><main>Edital 01</main></html>')));
+console.log("1.5 offline validation passed");

@@ -3,9 +3,12 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { deriveCollectorHealth } from "../src/lib/collector/health";
 
-assert.equal(deriveCollectorHealth({ lastRun: { status: "SUCCESS" }, sourcesHealthy: 2, sourcesDegraded: 0, pendingAI: 0 }), "HEALTHY");
-assert.equal(deriveCollectorHealth({ lastRun: { status: "DEGRADED_NO_AI" }, sourcesHealthy: 2, sourcesDegraded: 0, pendingAI: 1 }), "DEGRADED");
-assert.equal(deriveCollectorHealth({ lastRun: { status: "FAILED" }, sourcesHealthy: 2, sourcesDegraded: 0, pendingAI: 0 }), "FAILED");
+const now = Date.parse("2026-09-29T12:00:00.000Z");
+const recentRun = { finished_at: "2026-09-29T11:30:00.000Z" };
+
+assert.equal(deriveCollectorHealth({ lastRun: { ...recentRun, status: "SUCCESS" }, sourcesHealthy: 2, sourcesDegraded: 0, pendingAI: 0, now }), "HEALTHY");
+assert.equal(deriveCollectorHealth({ lastRun: { ...recentRun, status: "DEGRADED_NO_AI" }, sourcesHealthy: 2, sourcesDegraded: 0, pendingAI: 1, now }), "DEGRADED");
+assert.equal(deriveCollectorHealth({ lastRun: { ...recentRun, status: "FAILED" }, sourcesHealthy: 2, sourcesDegraded: 0, pendingAI: 0, now }), "FAILED");
 assert.equal(deriveCollectorHealth({ lastRun: null, sourcesHealthy: 2, sourcesDegraded: 0, pendingAI: 0 }), "DEGRADED");
 
 const root = resolve(import.meta.dirname, "..");

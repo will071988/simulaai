@@ -6,6 +6,7 @@ import { OpenRouterProvider } from "./openrouter";
 import { supabaseService } from "@/lib/supabase-server";
 import crypto from "crypto";
 import { aiConfig, isModelAllowed } from "./config";
+import { GenerationBudget } from "./generationBudget";
 
 function providers(): Record<string, AIProvider> {
   return {
@@ -45,7 +46,7 @@ async function logUsage(provider: string, model: string, taskType: string, succe
 
 async function reserveBudget(): Promise<boolean> {
   const maxDay = aiConfig.maxPerDay;
-  if (!maxDay || maxDay <= 0) return true;
+  if (!Number.isInteger(maxDay) || maxDay <= 0) return false;
   try {
     const svc = supabaseService();
     const { data, error } = await svc.rpc("reserve_ai_daily_budget", { p_limit: maxDay });
@@ -54,50 +55,69 @@ async function reserveBudget(): Promise<boolean> {
   } catch { return false; }
 }
 
-export async function generateWithFallback<T>(req: AIRequest, opts?: { validate?: (d: unknown) => boolean }): Promise<AIResult<T> & { degraded?: boolean }> {
+export type RouterDependencies = {
+  providers: typeof providers;
+  getCached: typeof getCached;
+  setCached: typeof setCached;
+  logUsage: typeof logUsage;
+  reserveBudget: typeof reserveBudget;
+  order: string[];
+  modelAllowed: (model: string) => boolean;
+  sleep: (ms: number) => Promise<void>;
+};
+const dependencies: RouterDependencies = { providers, getCached, setCached, logUsage, reserveBudget, order: aiConfig.providerOrder, modelAllowed: isModelAllowed, sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)) };
+
+export async function generateWithFallback<T>(req: AIRequest, opts?: { validate?: (d: unknown) => boolean; budget?: GenerationBudget }, deps: RouterDependencies = dependencies): Promise<AIResult<T> & { degraded?: boolean }> {
   if (process.env.COLLECTOR_ENABLED === "false") return { ok: false, provider: "disabled", model: "", latencyMs: 0, errorCode: "COLLECTOR_DISABLED", degraded: true };
   if (process.env.AI_ENABLED === "false") return { ok: false, provider: "disabled", model: "", latencyMs: 0, errorCode: "AI_DISABLED", degraded: true };
   const inputHash = hashInput(req.input, req.promptVersion, req.taskType);
-  const cached = await getCached<T>(inputHash, req.promptVersion);
-  if (cached) return { ok: true, provider: "cache", model: "cache", data: cached, latencyMs: 0, cached: true };
+  const cached = await deps.getCached<T>(inputHash, req.promptVersion);
+  if (cached && (!opts?.validate || opts.validate(cached))) return { ok: true, provider: "cache", model: "cache", data: cached, latencyMs: 0, cached: true };
 
-  const ord = aiConfig.providerOrder;
-  const map = providers();
+  const ord = deps.order;
+  const map = deps.providers();
+  const budget = opts?.budget || new GenerationBudget(aiConfig.maxPerRun);
+  let lastErrorCode = "AI_PENDING";
 
   for (const name of ord) {
     const p = map[name];
     if (!p) continue;
-    if (aiConfig.freeOnly && !isModelAllowed(p.model)) {
-      await logUsage(p.name, p.model, req.taskType, false, 0, "PAID_MODEL_BLOCKED");
+    if (!deps.modelAllowed(p.model)) {
+      lastErrorCode = "PAID_MODEL_BLOCKED";
       continue;
     }
     const health = await p.healthCheck();
-    if (!health.healthy) continue;
+    if (!health.healthy) { lastErrorCode = "PROVIDER_DOWN"; continue; }
     // single retry with backoff for 429
     let attempt = 0;
     while (attempt < 2) {
-      if (!(await reserveBudget())) return { ok: false, provider: "budget", model: "", latencyMs: 0, errorCode: "BUDGET_EXCEEDED", degraded: true };
-      const res = await p.generate<T>(req);
-      await logUsage(p.name, p.model, req.taskType, res.ok, res.latencyMs, res.errorCode, JSON.stringify(req.input).length, res.raw?.length);
+      const beforeCalls = budget.calls;
+      const res = await p.generate<T>(req, () => budget.reserve(deps.reserveBudget));
+      const invalidSchema = res.ok && opts?.validate && !opts.validate(res.data);
+      if (budget.calls > beforeCalls) await deps.logUsage(p.name, p.model, req.taskType, res.ok && !invalidSchema, res.latencyMs, invalidSchema ? "INVALID_SCHEMA" : res.errorCode, JSON.stringify(req.input).length, res.raw?.length);
+      if (res.errorCode === "BUDGET_EXCEEDED") return { ...res, degraded: true };
       if (res.ok) {
-        if (opts?.validate && !opts.validate(res.data)) {
-          await logUsage(p.name, p.model, req.taskType, false, res.latencyMs, "INVALID_SCHEMA");
+        if (invalidSchema) {
+          lastErrorCode = "INVALID_SCHEMA";
           break; // try next provider
         }
-        await setCached(inputHash, req.promptVersion, p.name, p.model, res.data);
+        await deps.setCached(inputHash, req.promptVersion, p.name, p.model, res.data);
         return res;
       }
       if (res.errorCode === "429") {
+        lastErrorCode = "429";
         const backoff = 1500 * Math.pow(2, attempt) + Math.random() * 500;
-        await new Promise((r) => setTimeout(r, backoff));
+        if (attempt === 0) await deps.sleep(backoff);
         attempt++;
         continue;
       }
       if (res.errorCode === "MODEL_NOT_FOUND") {
+        lastErrorCode = "MODEL_NOT_FOUND";
         break; // try next provider/model
       }
+      lastErrorCode = res.errorCode || "PROVIDER_DOWN";
       break;
     }
   }
-  return { ok: false, provider: "all", model: "all", latencyMs: 0, errorCode: "AI_PENDING", degraded: true };
+  return { ok: false, provider: "all", model: "all", latencyMs: 0, errorCode: lastErrorCode, degraded: true };
 }

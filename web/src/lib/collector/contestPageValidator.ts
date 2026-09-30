@@ -7,7 +7,7 @@ export function validateContestPage(title: string, url: string, text: string): P
   if (/\.pdf(?:\?|$)/.test(value)) { score++; signals.push("pdf"); }
   const pageIdentity = `${title} ${path}`;
   for (const word of ["contatos", "publicaç", "avaliaç", "centros de pesquisa", "institucional", "quem somos", "serviços", "homepage"]) if (pageIdentity.includes(word)) { score -= 2; signals.push(`-${word}`); }
-  const specificUrl = /\/concursos\/[^/]+/.test(path) && !/\/concursos\/?$/.test(path);
+  const specificUrl = /\/concursos?\/[^/]+/.test(path) || /\/web\/dou\/-\/[^/]+/.test(path) || /\.pdf$/i.test(path);
   if (specificUrl) { score++; signals.push("specific-url"); }
   return { decision: score >= 2 && specificUrl ? "ACCEPT" : score === 1 ? "MAYBE" : "REJECT", score, signals };
 }

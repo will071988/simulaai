@@ -24,9 +24,11 @@ function extractGroup(text: string, escolaridade?: string[] | null) {
 
 export function extractIdentitySignals(input: IdentitySignalsInput): ContestIdentity {
   const text = `${input.title}\n${input.rawText || ""}`;
-  const edital = normalizeBaseEditalNumber(text);
+  const editalReference = text.match(/\bEDITAL\s*(?:(?:N[º°oO.]|NUMERO|NÚMERO|DE\s+ABERTURA)\s*)*[.:-]?\s*(\d{1,3}\s*(?:\/|DE)\s*20\d{2})/i)?.[1];
+  const edital = normalizeBaseEditalNumber(editalReference);
   const process = text.match(/PROCESSO(?:\s+SELETIVO|\s+ADMINISTRATIVO)?\s*(?:N[ºO]\.?|NUMERO)?\s*([\d.]+\/20\d{2})/i)?.[1]?.replace(/\s+/g, "") || null;
-  const slug = new URL(input.url).pathname.match(/\/concursos\/([^/?#]+)/i)?.[1]?.toLowerCase() || null;
+  const path = new URL(input.url).pathname;
+  const slug = !/\.pdf$/i.test(path) ? path.match(/\/concursos?\/([^/?#]+)/i)?.[1]?.toLowerCase() || null : null;
   const cargos = input.cargos?.map(normalizeCargo).filter((value): value is string => value !== null && !/^NIVEL_(MEDIO|SUPERIOR|FUNDAMENTAL|TECNICO)_?$/.test(value)) as string[] | undefined;
   const titleCargo = /GUARDA(?:\s+CIVIL)?\s+MUNICIPAL/i.test(text) ? "GUARDA CIVIL MUNICIPAL" : null;
   const cargoKey = normalizeCargo(titleCargo) || cargos?.[0] || normalizeCargo(text.match(/(?:CARGO|FUNCAO)\s*(?:DE|:)?\s*([A-Za-zÀ-ÿ ]{3,70})/i)?.[1] || null);
@@ -46,7 +48,7 @@ export function stableEntityKey(identity: ContestIdentity): string | null {
 
 export function scoreEntity(candidate: ContestIdentity, incoming: ContestIdentity): EntityResolution {
   let score = 0; const reasons: string[] = []; const hardConflicts: string[] = [];
-  if (candidate.orgao === incoming.orgao) { score += 25; reasons.push("orgao"); }
+  if (candidate.orgao === incoming.orgao) { score += 25; reasons.push("orgao"); } else hardConflicts.push("ORGAO_DIFERENTE");
   if (candidate.ano !== "UNKNOWN" && candidate.ano === incoming.ano) { score += 10; reasons.push("ano"); }
   if (candidate.banca !== "UNKNOWN" && incoming.banca !== "UNKNOWN" && candidate.banca === incoming.banca) { score += 10; reasons.push("banca"); }
   if (candidate.editalNumber && incoming.editalNumber) { if (candidate.editalNumber === incoming.editalNumber) { score += 45; reasons.push("edital"); } else hardConflicts.push("EDITAL_DIFERENTE"); }
@@ -55,7 +57,7 @@ export function scoreEntity(candidate: ContestIdentity, incoming: ContestIdentit
   if (candidate.cargoKey && incoming.cargoKey) { if (candidate.cargoKey === incoming.cargoKey) { score += 30; reasons.push("cargo"); } else hardConflicts.push("CARGO_DIFERENTE"); }
   if (candidate.cargoGroupKey && incoming.cargoGroupKey) { if (candidate.cargoGroupKey === incoming.cargoGroupKey) { score += 20; reasons.push("grupo"); } else hardConflicts.push("GRUPO_DIFERENTE"); }
   const a = new Set(candidate.titleKey.split(" ")); const b = new Set(incoming.titleKey.split(" ")); if ([...a].filter((word) => word.length > 3 && b.has(word)).length >= 2) { score += 10; reasons.push("titulo"); }
-  const certainDifferent = hardConflicts.includes("EDITAL_DIFERENTE") || hardConflicts.includes("PROCESSO_DIFERENTE") || (hardConflicts.includes("SLUG_OFICIAL_DIFERENTE") && hardConflicts.includes("CARGO_DIFERENTE"));
+  const certainDifferent = hardConflicts.includes("ORGAO_DIFERENTE") || hardConflicts.includes("EDITAL_DIFERENTE") || hardConflicts.includes("PROCESSO_DIFERENTE") || (hardConflicts.includes("SLUG_OFICIAL_DIFERENTE") && hardConflicts.includes("CARGO_DIFERENTE"));
   const decision = certainDifferent ? "NEW_ENTITY" : hardConflicts.length ? (score >= 65 ? "POSSIBLE_DUPLICATE" : "NEW_ENTITY") : score >= 85 && (reasons.includes("edital") || reasons.includes("processo") || reasons.includes("slug") || reasons.includes("cargo") || reasons.includes("grupo")) ? "AUTO_MATCH" : score >= 65 ? "POSSIBLE_DUPLICATE" : "NEW_ENTITY";
   return { score, decision, reason: reasons.join(","), hardConflicts, identity: incoming };
 }

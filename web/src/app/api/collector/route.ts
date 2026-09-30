@@ -26,18 +26,22 @@ export async function GET(req: Request) {
 
   // public minimal status (no secrets)
   if (!wantRun) {
-    const { data: lastRun } = await svc.from("collector_runs").select("started_at,finished_at,status,sources_checked,documents_new").order("started_at", { ascending: false }).limit(1).maybeSingle();
-    const { count: pendingAI } = await svc.from("collector_documents").select("id", { count: "exact", head: true }).eq("status", "AI_PENDING");
-    const { data: sources } = await svc.from("collector_sources").select("last_status").eq("enabled", true);
+    const { data: lastRun, error: runError } = await svc.from("collector_runs").select("started_at,finished_at,status,sources_checked,sources_success,sources_failed,documents_new,documents_unchanged,ai_pending,errors_count,parsed_success,parse_failed").order("started_at", { ascending: false }).limit(1).maybeSingle();
+    const { count: pendingAI, error: pendingError } = await svc.from("collector_documents").select("id", { count: "exact", head: true }).eq("status", "AI_PENDING");
+    const { data: sources, error: sourcesError } = await svc.from("collector_sources").select("last_status,failure_count").eq("enabled", true);
+    if (runError || pendingError || sourcesError) return NextResponse.json({ ok: false, error: "COLLECTOR_HEALTH_QUERY_FAILED" }, { status: 503 });
     const healthy = sources?.filter((s) => s.last_status === "SUCCESS").length ?? 0;
     const degraded = sources?.filter((s) => s.last_status === "DEGRADED" || s.last_status === "EMPTY").length ?? 0;
+    const failed = sources?.filter((s) => s.last_status === "FAILED").length ?? 0;
+    const failureThreshold = Number(process.env.MAX_CONSECUTIVE_SOURCE_FAILURES || 3);
     return NextResponse.json({
       ok: true,
-      status: deriveCollectorHealth({ lastRun, sourcesHealthy: healthy, sourcesDegraded: degraded, pendingAI: pendingAI ?? 0 }),
+      status: deriveCollectorHealth({ lastRun, sourcesHealthy: healthy, sourcesDegraded: degraded, sourcesFailed: failed, sourceFailureThresholdExceeded: Boolean(sources?.some((source) => (source.failure_count || 0) >= failureThreshold)), pendingAI: pendingAI ?? 0, maxPendingAI: Number(process.env.MAX_PENDING_AI_ALERT || 20), maxParseFailureRate: Number(process.env.MAX_PARSE_FAILURE_RATE || 0.25) }),
       timestamp: new Date().toISOString(),
       lastRun,
       sourcesHealthy: healthy,
       sourcesDegraded: degraded,
+      sourcesFailed: failed,
       pendingAI: pendingAI ?? 0,
     });
   }

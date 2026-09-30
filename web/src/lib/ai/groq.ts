@@ -1,6 +1,7 @@
 import type { AIProvider } from "./provider";
 import type { AIRequest, AIResult } from "./types";
 import { CircuitBreaker } from "./provider";
+import { generationFetch, type GenerationPermit } from "./generationBudget";
 
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 
@@ -16,14 +17,12 @@ export class GroqProvider implements AIProvider {
     if (!process.env.GROQ_API_KEY) return { healthy: false };
     return { healthy: true };
   }
-  async generate<T>(req: AIRequest): Promise<AIResult<T>> {
+  async generate<T>(req: AIRequest, permit?: GenerationPermit): Promise<AIResult<T>> {
     const start = Date.now();
     if (!process.env.GROQ_API_KEY) return { ok: false, provider: this.name, model: this.model, latencyMs: Date.now() - start, errorCode: "NO_API_KEY" };
     if (this.cb.isOpen()) return { ok: false, provider: this.name, model: this.model, latencyMs: Date.now() - start, errorCode: "CIRCUIT_OPEN" };
     try {
-      const controller = new AbortController();
-      const t = setTimeout(() => controller.abort(), 15000);
-      const res = await fetch(GROQ_URL, {
+      const res = await generationFetch(GROQ_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.GROQ_API_KEY}` },
         body: JSON.stringify({
@@ -35,9 +34,7 @@ export class GroqProvider implements AIProvider {
           temperature: 0.2,
           response_format: { type: "json_object" },
         }),
-        signal: controller.signal,
-      });
-      clearTimeout(t);
+      }, permit);
       if (!res.ok) {
         const txt = await res.text();
         if (res.status === 404 || txt.includes("model_decommissioned") || txt.includes("model_not_found")) {

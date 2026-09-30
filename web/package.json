@@ -24,6 +24,11 @@
     "test:security": "tsx scripts/validate-security.ts",
     "test:ssrf": "tsx scripts/validate-ssrf.ts",
     "test:api-persistence": "tsx scripts/validate-api-persistence.ts",
+    "test:1.5": "tsx scripts/validate-1.5.ts && tsx scripts/validate-ai-budget.ts && tsx scripts/validate-collector-database.ts && tsx scripts/validate-adapters.ts",
+    "test:ai-budget": "tsx scripts/validate-ai-budget.ts",
+    "test:publication-policy": "tsx scripts/validate-publication-policy.ts",
+    "test:collector-observability": "tsx scripts/validate-collector-observability.ts",
+    "test:collector-idempotency": "tsx scripts/validate-collector-idempotency.ts && tsx scripts/validate-collector-database.ts",
     "test:e2e:1.4": "tsx scripts/e2e-1.4-real.ts",
     "recalculate:hot": "tsx scripts/recalculate-hot.ts",
     "backfill:enrichment": "tsx scripts/backfill-enrichment.ts"
@@ -40,6 +45,7 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
     "@tailwindcss/postcss": "^4",
     "@types/leaflet": "^1.9.22",
     "@types/node": "^20",

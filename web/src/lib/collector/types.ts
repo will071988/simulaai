@@ -7,6 +7,12 @@ export type DiscoveredDocument = {
   documentType: "EDITAL" | "NOTICE" | "PDF_PROVA" | "PDF_GABARITO" | "HTML" | "EDITAL_PDF";
   publishedAt?: string;
   tier: number;
+  contestUrl?: string;
+  identityTitle?: string;
+  source?: string;
+  url?: string;
+  documentTypeCandidate?: string;
+  metadata?: { discoveryOnly?: boolean; adapter?: string };
 };
 
 export type CollectorRunResult = {
