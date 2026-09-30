@@ -118,19 +118,33 @@ Idempotência real, mesmo conjunto de 8 documentos em duas passagens:
 
 ## Commit
 
-Pendente de registro após este relatório.
+- Implementação validada: `4149312e4850d80583df0929fd4c01fbc117bae8` (`feat: complete reliable autonomous ingestion`).
+- Autor Git alinhado à conta GitHub por endereço `noreply`, sem expor e-mail privado.
+- `main` enviada para `origin` sem reescrita destrutiva de histórico remoto.
 
 ## CI
 
-Pendente de push e execução remota.
+- GitHub Actions run: `36661456245`.
+- Commit verificado: `4149312e4850d80583df0929fd4c01fbc117bae8`.
+- Resultado: **success**, com 25 etapas aprovadas, incluindo todas as suítes obrigatórias, audit, lint, TypeScript e build.
+- Evidência: <https://github.com/will071988/simulaai/actions/runs/36661456245>
 
 ## Deployment
 
-Pendente de CI e deployment Vercel.
+- O primeiro auto-deployment revelou `Root Directory` incorreto (`.`) e falhou antes de executar a aplicação.
+- A configuração do projeto Vercel foi corrigida para `web`, onde o app Next.js realmente reside.
+- Deployment de produção: `dpl_DLS8SDALH4E3Ray36XCVnvBPXd5p`.
+- Estado: **Ready**.
+- URL imutável: <https://simulaai-30nf8no0q-williamrocha6-5180s-projects.vercel.app>
+- Alias de produção: <https://simulaai-kappa.vercel.app>
 
 ## Production Smoke
 
-Pendente do deployment desta versão.
+- Chrome: home, `/dashboard`, `/quiz`, `/simulados` e `/simulados/pf-cebraspe-01` carregaram corretamente.
+- HTTP: as cinco páginas responderam `200`.
+- Headers de segurança confirmados: CSP presente, `X-Frame-Options: DENY` e `X-Content-Type-Options: nosniff`.
+- APIs públicas: `/api/concursos` e detalhe responderam `200`; health check mínimo `/api/collector` respondeu `200` sem expor segredos.
+- Execução protegida: `GET /api/collector?run=1`, `POST /api/collector`, `GET /api/collector/pending` e `POST /api/collector/pending` responderam `401` sem credencial.
 
 ## Riscos Residuais
 
@@ -141,4 +155,4 @@ Pendente do deployment desta versão.
 
 ## Estado Final
 
-Implementação e validação local/real concluídas. A Sprint 1.5 **ainda não está fechada** até CI remoto verde, deployment Vercel `READY` e production smoke aprovado.
+Implementação, banco, validação real, CI remoto, deployment e production smoke concluídos. **SPRINT 1.5 FECHADA**.
