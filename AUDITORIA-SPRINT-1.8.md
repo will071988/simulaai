@@ -1,7 +1,7 @@
 # Auditoria da Sprint 1.8 — Motor real de simulados
 
 Data: 30/09/2026
-Status: implementação concluída; gates remotos finais em andamento
+Status: concluída
 
 ## Escopo entregue
 
@@ -48,7 +48,8 @@ Status: implementação concluída; gates remotos finais em andamento
 
 ## Gates remotos finais
 
-- Commit/push: pendente.
-- GitHub Actions: pendente.
-- Deployment Vercel: pendente.
-- Smoke de produção: pendente.
+- Commit de implementação: `3c4e950f65f20090cef59824959ba5032172fbd5`, publicado em `origin/main`.
+- GitHub Actions: execução `36805649004`, concluída com sucesso em todos os gates.
+- Deployment Vercel: `dpl_DnirCcmdCBzaEn6fv41mEn3Eizqx`, status `Ready`, com alias `https://simulaai-kappa.vercel.app`.
+- Smoke HTTP/API em produção: página 200 com CSP; 2 concursos com questões; tentativa PF de 3 questões criada e concluída; zero campos de resposta vazados; nota injetada `999` ignorada; conclusão repetida idempotente.
+- Smoke visual no Chrome: PF selecionada, três questões respondidas e resultado visível com “CORREÇÃO CONCLUÍDA NO SERVIDOR”, `100,00%` e `3 acertos em 3 questões`.
