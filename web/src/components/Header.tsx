@@ -13,6 +13,7 @@ export function Header() {
         <nav className="hidden md:flex items-center gap-6 text-sm text-white/80">
           <Link href="/quiz" className="hover:text-white">Quiz</Link>
           <Link href="/simulados" className="hover:text-white">Simulados</Link>
+          <Link href="/concursos" className="hover:text-white">Concursos</Link>
           <Link href="/acompanhamento" className="hover:text-white">Alertas</Link>
           <Link href="/#radar" className="hover:text-white">Radar</Link>
           <Link href="/#planos" className="hover:text-white">Planos</Link>
