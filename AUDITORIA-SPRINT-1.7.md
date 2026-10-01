@@ -65,8 +65,22 @@ Nenhum `db reset`, `migration repair`, `DROP` ou `TRUNCATE` foi usado.
 
 ## Gates Remotos
 
-Pendente de commit, push, CI, deployment e production smoke desta versão.
+- Commit de implementação: `37c65c28db42f6f3dfe7804ef9d8ddf39cf0a4e3` (`feat: build validated question bank`).
+- GitHub Actions: run `36803693319`, concluída com **success** em todas as etapas, incluindo `test:1.7`, regressões, lint, TypeScript, audit e build.
+- Evidência: <https://github.com/will071988/simulaai/actions/runs/36803693319>
+- Vercel deployment: `dpl_Ft9FAfEn2zAN27LhGCX6WYopJ78c`, estado **Ready**.
+- URL imutável: <https://simulaai-3iz9q3r2c-williamrocha6-5180s-projects.vercel.app>
+- O alias customizado inicialmente permaneceu no deployment anterior; foi explicitamente promovido para a versão validada e reinspecionado.
+- Alias de produção confirmado: <https://simulaai-kappa.vercel.app>
+
+## Production Smoke
+
+- `/`, `/dashboard`, `/quiz`, `/simulados`, `/simulados/pf-cebraspe-01`, `/api/collector`, `/api/concursos`, `/api/concursos/hot` e `/api/questoes`: HTTP `200`.
+- CSP presente, `X-Frame-Options: DENY` e `X-Content-Type-Options: nosniff` nas nove rotas.
+- `/api/questoes` retornou 2 questões `QUESTAO_AUTORAL` publicadas (Matemática e Raciocínio Lógico).
+- Payload público não contém `resposta_correta`, `explicacao` ou `isCorrect`.
+- `main` e `origin/main` correspondem ao commit de implementação no momento do deployment.
 
 ## Estado
 
-Implementação, banco e validação local concluídos. A Sprint 1.7 permanece aberta até os gates remotos ficarem verdes.
+Implementação, banco funcional, validação local, CI, deployment e production smoke concluídos. **SPRINT 1.7 FECHADA**.
