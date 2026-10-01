@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { supabase } from "@/lib/supabase";
 
 type ContestOption = { id: string; titulo: string; orgao: string; banca: string | null; questionCount: number };
 type Options = { concursos: ContestOption[]; cargos: string[]; disciplinas: string[]; assuntos: string[]; bancas: string[]; niveis: string[] };
@@ -56,7 +57,8 @@ export function SimuladoGenerator() {
     try {
       const recent = JSON.parse(localStorage.getItem("simulaai-recent-question-ids") || "[]") as string[];
       const body = Object.fromEntries(Object.entries({ ...form, quantidade: Number(form.quantidade), sessionId: browserSessionId(), excludeQuestionIds: recent.slice(-100) }).filter(([, value]) => value !== ""));
-      const response = await fetch("/api/simulados/generate", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+      const { data: auth } = await supabase.auth.getSession();
+      const response = await fetch("/api/simulados/generate", { method: "POST", headers: { "content-type": "application/json", ...(auth.session ? { authorization: `Bearer ${auth.session.access_token}` } : {}) }, body: JSON.stringify(body) });
       const payload = await response.json();
       if (!response.ok) {
         if (payload.error === "INSUFFICIENT_QUESTIONS") throw new Error(`Há ${payload.available} questões para esses filtros; reduza a quantidade solicitada.`);

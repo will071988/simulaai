@@ -4,6 +4,7 @@ import { supabaseService } from "@/lib/supabase-server";
 import { toPublicQuestion } from "@/lib/questions/publicQuestion";
 import { GenerateSimuladoSchema, selectQuestions, simuladoTitle, type QuestionCandidate } from "@/lib/simulados/engine";
 import { createAttemptToken, hashAttemptToken } from "@/lib/simulados/security";
+import { authenticatedUser, bearerToken } from "@/lib/auth/server";
 
 type QuestionRow = {
   id: string; concurso_id: string | null; cargo: string | null; disciplina: string; assunto: string;
@@ -45,6 +46,9 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const presentedToken = bearerToken(request);
+    const user = presentedToken ? await authenticatedUser(request) : null;
+    if (presentedToken && !user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
     const parsed = GenerateSimuladoSchema.safeParse(await request.json());
     if (!parsed.success) return NextResponse.json({ error: "INVALID_SIMULADO_REQUEST", details: parsed.error.flatten().fieldErrors }, { status: 400 });
     const input = { ...parsed.data, seed: parsed.data.seed || randomBytes(16).toString("hex") };
@@ -79,6 +83,7 @@ export async function POST(request: Request) {
       p_question_ids: selected.map((question) => question.id),
       p_session_id: input.sessionId,
       p_token_hash: hashAttemptToken(token),
+      p_user_id: user?.id || null,
     });
     if (error || !data) return NextResponse.json({ error: "SIMULADO_CREATE_FAILED" }, { status: 500 });
     const rows = new Map(questions.map((question) => [question.id, question]));
