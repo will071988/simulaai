@@ -50,8 +50,22 @@ Nenhum `db reset`, `migration repair`, `DROP` ou `TRUNCATE` foi usado. A tentati
 
 ## Gates Remotos
 
-Pendente de commit, push, CI, deployment e production smoke desta versão.
+- Commit de implementação: `fb3497e754946a16d7808e5a78296f74e3827891` (`feat: govern source quality and curation`).
+- GitHub Actions: run `36802465710`, concluída com **success** em todas as etapas, incluindo `test:1.6`, regressões, lint, TypeScript, audit e build.
+- Evidência: <https://github.com/will071988/simulaai/actions/runs/36802465710>
+- Vercel deployment: `dpl_4SqrBrM16Lnp8yD6AJkKxt7Cktab`, estado **Ready**.
+- URL imutável: <https://simulaai-4d4amafis-williamrocha6-5180s-projects.vercel.app>
+- Alias de produção: <https://simulaai-kappa.vercel.app>
+
+## Production Smoke
+
+- Chrome confirmou home e simulado PF/Cebraspe renderizados; a navegação percorreu dashboard, quiz e lista de simulados.
+- `/`, `/dashboard`, `/quiz`, `/simulados`, `/simulados/pf-cebraspe-01`, `/api/collector`, `/api/concursos` e `/api/concursos/hot`: HTTP `200`.
+- CSP presente, `X-Frame-Options: DENY` e `X-Content-Type-Options: nosniff` em todas as rotas verificadas.
+- `GET /api/collector?run=1`, `POST /api/collector` e ambos os métodos de `/api/collector/pending`: `401` sem credencial.
+- Health do registry: 2 fontes `HEALTHY`, 1 `DEGRADED`, 0 `FAILED`, `AI_PENDING=0`; estado agregado `DEGRADED` de forma fail-closed.
+- `main`, `origin/main` e deployment correspondem ao commit de implementação.
 
 ## Estado
 
-Implementação, banco e validação local concluídos. A Sprint 1.6 permanece aberta até os gates remotos ficarem verdes.
+Implementação, banco, validação local, CI, deployment e production smoke concluídos. **SPRINT 1.6 FECHADA**.
