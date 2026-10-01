@@ -27,6 +27,7 @@
     "test:1.5": "tsx scripts/validate-1.5.ts && tsx scripts/validate-ai-budget.ts && tsx scripts/validate-collector-database.ts && tsx scripts/validate-adapters.ts",
     "test:1.6": "tsx scripts/validate-1.6.ts && tsx scripts/validate-1.6-database.ts",
     "test:1.7": "tsx scripts/validate-1.7.ts && tsx scripts/validate-1.7-database.ts",
+    "test:1.8": "tsx scripts/validate-1.8.ts && tsx scripts/validate-1.8-database.ts",
     "test:ai-budget": "tsx scripts/validate-ai-budget.ts",
     "test:publication-policy": "tsx scripts/validate-publication-policy.ts",
     "test:collector-observability": "tsx scripts/validate-collector-observability.ts",

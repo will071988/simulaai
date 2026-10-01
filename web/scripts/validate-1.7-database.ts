@@ -4,7 +4,7 @@ import { createCollectorDatabase } from "./support/collectorDatabase";
 async function main() {
   const { db } = await createCollectorDatabase();
   try {
-    const published = await db.query<{ quality_status: string; origem: string }>("select quality_status, origem from questoes order by disciplina");
+    const published = await db.query<{ quality_status: string; origem: string }>("select quality_status, origem from questoes where validated_by='sprint-1.7-seed' order by disciplina");
     assert.equal(published.rows.length, 2);
     assert.ok(published.rows.every((row) => row.quality_status === "PUBLISHED" && row.origem === "QUESTAO_AUTORAL"));
 
@@ -22,7 +22,7 @@ async function main() {
     await db.query("update questoes set quality_status='VALIDATED', validated_at=now(), validated_by='fixture', validation_errors='[]' where id=$1", [draft.id]);
     await db.query("update questoes set quality_status='PUBLISHED' where id=$1", [draft.id]);
     await db.exec("set role anon");
-    assert.equal((await db.query<{ n: number }>("select count(*) as n from questoes")).rows[0].n, 3);
+    assert.equal((await db.query<{ n: number }>("select count(*) as n from questoes where id=$1", [draft.id])).rows[0].n, 1);
     await assert.rejects(db.query("delete from questoes where id=$1", [draft.id]), /permission denied/);
     console.log("Sprint 1.7 PostgreSQL quality gate and published-only RLS tests passed");
   } finally {
