@@ -39,6 +39,7 @@ jobs:
       - run: npm run test:api-persistence
       - run: npm run test:1.5
       - run: npm run test:1.6
+      - run: npm run test:1.7
       - run: npm run test:publication-policy
       - run: npm run test:collector-observability
       - run: npm run test:collector-idempotency
