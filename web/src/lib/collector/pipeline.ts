@@ -11,6 +11,7 @@ import { validateContestPage } from "./contestPageValidator";
 import { extractConcursoWithAI } from "./extractConcursoWithAI";
 import { createCollectorMetrics, deriveCollectorRunStatus, stageResult, type CollectorStageResult } from "./observability";
 import { GenerationBudget } from "../ai/generationBudget";
+import { deriveSourceHealth } from "./sourceRegistry";
 
 const MAX_AI_PER_RUN = Number(process.env.MAX_AI_REQUESTS_PER_RUN || 10);
 const MAX_DOCUMENTS_PER_RUN = Number(process.env.MAX_DOCUMENTS_PER_RUN || 10);
@@ -44,7 +45,8 @@ export async function runCollector(externalRunId?: string): Promise<{ runId: str
       metrics.sources_checked++;
       metrics.sources_failed++;
       metrics.errors_count++;
-      const { error } = await svc.from("collector_sources").update({ last_status: "FAILED", last_error_code: "ADAPTER_NOT_CONFIGURED", last_failure_at: new Date().toISOString(), failure_count: (source.failure_count || 0) + 1 }).eq("id", source.id);
+      const failureCount = (source.failure_count || 0) + 1;
+      const { error } = await svc.from("collector_sources").update({ last_status: "FAILED", health_status: deriveSourceHealth({ enabled: true, tier: source.tier, failureCount, adapter: null }), last_checked_at: new Date().toISOString(), last_error_code: "ADAPTER_NOT_CONFIGURED", last_failure_at: new Date().toISOString(), failure_count: failureCount }).eq("id", source.id);
       if (error) throw new Error("SOURCE_STATUS_WRITE_FAILED");
       recordStage(stageResult("discover", Date.now(), { status: "FAILED", source: source.name, errorCode: "ADAPTER_NOT_CONFIGURED" }));
     }
@@ -70,14 +72,15 @@ export async function runCollector(externalRunId?: string): Promise<{ runId: str
         lastError = e instanceof Error ? e.message : "ERR";
         recordStage(stageResult("discover", discoverStarted, { status: "FAILED", source: adapter.sourceName, errorCode: lastError }));
         const prev = sourceMap.get(adapter.sourceName);
-        const { error: updErr } = await svc.from("collector_sources").update({ last_failure_at: new Date().toISOString(), failure_count: (prev?.failure_count || 0) + 1, last_status: lastStatus, last_error_code: lastError, last_documents_count: 0 }).eq("name", adapter.sourceName);
+        const failureCount = (prev?.failure_count || 0) + 1;
+        const { error: updErr } = await svc.from("collector_sources").update({ last_checked_at: new Date().toISOString(), last_failure_at: new Date().toISOString(), failure_count: failureCount, last_status: lastStatus, health_status: deriveSourceHealth({ enabled: true, tier: configuredSource.tier, failureCount, adapter: configuredSource.adapter || adapter.sourceName, lastStatus }), last_error_code: lastError, last_documents_count: 0 }).eq("name", adapter.sourceName);
         if (updErr) throw new Error("SOURCE_STATUS_WRITE_FAILED");
         continue;
       }
       const prev = sourceMap.get(adapter.sourceName);
       const emptyStreak = discovered.length === 0 ? (prev?.consecutive_empty_runs || 0) + 1 : 0;
       const healthStatus = discovered.length === 0 && emptyStreak >= 3 ? "DEGRADED" : lastStatus;
-      const { error: updErr2 } = await svc.from("collector_sources").update({ last_success_at: new Date().toISOString(), failure_count: 0, last_status: healthStatus, last_documents_count: discovered.length, last_document_found_at: discovered.length ? new Date().toISOString() : prev?.last_document_found_at, consecutive_empty_runs: emptyStreak, last_error_code: null }).eq("name", adapter.sourceName);
+      const { error: updErr2 } = await svc.from("collector_sources").update({ last_checked_at: new Date().toISOString(), last_success_at: new Date().toISOString(), failure_count: 0, last_status: healthStatus, health_status: deriveSourceHealth({ enabled: true, tier: configuredSource.tier, failureCount: 0, adapter: configuredSource.adapter || adapter.sourceName, lastStatus: healthStatus }), last_documents_count: discovered.length, last_document_found_at: discovered.length ? new Date().toISOString() : prev?.last_document_found_at, consecutive_empty_runs: emptyStreak, last_error_code: null }).eq("name", adapter.sourceName);
       if (updErr2) throw new Error("SOURCE_STATUS_WRITE_FAILED");
       metrics.documents_found += discovered.length;
 

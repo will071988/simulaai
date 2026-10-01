@@ -1,0 +1,26 @@
+import assert from "node:assert/strict";
+import { canTransitionContestStatus, normalizeContestStatus, resolveEvidencedContestStatus } from "../src/lib/collector/contestStatus";
+import { deriveSourceHealth, mayActivateCandidate, mayProvideFactualAuthority, sourcePriority } from "../src/lib/collector/sourceRegistry";
+import { resolveField } from "../src/lib/collector/fieldResolver";
+
+assert.equal(sourcePriority(1) > sourcePriority(2), true);
+assert.equal(sourcePriority(2) > sourcePriority(3), true);
+assert.equal(deriveSourceHealth({ enabled: false, tier: 1, failureCount: 9, adapter: "FGV" }), "DISABLED");
+assert.equal(deriveSourceHealth({ enabled: true, tier: 1, failureCount: 3, adapter: "FGV" }), "DEGRADED");
+assert.equal(deriveSourceHealth({ enabled: true, tier: 1, failureCount: 0, adapter: null }), "FAILED");
+assert.equal(deriveSourceHealth({ enabled: true, tier: 1, failureCount: 0, adapter: "FGV", lastStatus: "SUCCESS" }), "HEALTHY");
+assert.equal(mayActivateCandidate({ status: "CANDIDATE", reviewedBy: "curator", officialUrl: "https://gov.br/edital" }), false);
+assert.equal(mayActivateCandidate({ status: "APPROVED", reviewedBy: "curator", officialUrl: "http://gov.br/edital" }), false);
+assert.equal(mayActivateCandidate({ status: "APPROVED", reviewedBy: "curator", officialUrl: "https://gov.br/edital" }), true);
+assert.equal(mayProvideFactualAuthority(2, "AGREGADOR"), false);
+assert.equal(mayProvideFactualAuthority(1, "BANCA"), true);
+assert.equal(normalizeContestStatus("inscrições abertas"), "INSCRICOES_ABERTAS");
+assert.equal(resolveEvidencedContestStatus({ value: "resultado", evidence: "resultado final", rawText: "Foi publicado o resultado final.", sourceTier: 1 }), "RESULTADO");
+assert.equal(resolveEvidencedContestStatus({ value: "resultado", evidence: "resultado final", rawText: "Rumor em agregador", sourceTier: 2 }), null);
+assert.equal(resolveEvidencedContestStatus({ value: "resultado", evidence: "texto ausente", rawText: "Edital oficial", sourceTier: 1 }), null);
+assert.equal(canTransitionContestStatus("EDITAL_ABERTO", "INSCRICOES_ABERTAS", { sourceTier: 1, hasEvidence: true }), true);
+assert.equal(canTransitionContestStatus("RESULTADO", "PREVISTO", { sourceTier: 1, hasEvidence: true }), false);
+assert.equal(canTransitionContestStatus("RESULTADO", "INSCRICOES_ABERTAS", { sourceTier: 1, hasEvidence: true, isAmendment: true }), true);
+const tierOne = [{ value_json: 100, source_tier: 1, observed_at: "2026-01-01T00:00:00Z", source_url: "https://gov.br/edital" }];
+assert.equal(resolveField(100, 200, { tier: 2, observedAt: "2026-02-01T00:00:00Z" }, tierOne).resolvedValue, 100);
+console.log("Sprint 1.6 registry, health, discovery, precedence and status tests passed");

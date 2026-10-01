@@ -16,7 +16,7 @@ export async function createCollectorDatabase() {
   for (const name of migrations) await db.exec(readFileSync(`../supabase/migrations/${name}.sql`, "utf8"));
   await db.exec('alter table concursos enable row level security; create policy "public read concursos" on concursos for select using (true); grant select on concursos to anon;');
   for (const name of ["20260928150000_disable_unsupported_collector_sources", "20260928170000_publication_and_change_idempotency"]) await db.exec(readFileSync(`../supabase/migrations/${name}.sql`, "utf8"));
-  for (const name of ["20260929120000_autonomous_collector", "20260929121000_atomic_contest_document", "20260930020000_collector_retry_recovery", "20260930021000_retry_official_url_identity_failures", "20260930022000_cleanup_false_factual_evidence"]) await db.exec(readFileSync(`../supabase/migrations/${name}.sql`, "utf8"));
+  for (const name of ["20260929120000_autonomous_collector", "20260929121000_atomic_contest_document", "20260930020000_collector_retry_recovery", "20260930021000_retry_official_url_identity_failures", "20260930022000_cleanup_false_factual_evidence", "20260930030000_source_registry_and_curated_status", "20260930031000_backfill_change_evidence", "20260930032000_register_evaluated_discovery_sources"]) await db.exec(readFileSync(`../supabase/migrations/${name}.sql`, "utf8"));
   const identifier = (value: string) => {
     if (!/^[a-z_]+$/.test(value)) throw new Error("INVALID_TEST_SQL_IDENTIFIER");
     return `"${value}"`;

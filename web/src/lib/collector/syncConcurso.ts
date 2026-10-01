@@ -26,6 +26,7 @@ import { aliasesFromIdentity, aliasesFromText, findAliasCandidates, type Identit
 import { resolveCanonicalContestId, resolveCanonicalContestIds } from "./canonicalContest";
 import { classifyDocumentRelationship, type DocumentRelationship } from "./documentRelationship";
 import { deriveQualityStatus } from "./publicationPolicy";
+import { canTransitionContestStatus, normalizeContestStatus, resolveEvidencedContestStatus } from "./contestStatus";
 
 type Location = { scope: string | null; state_code: string | null; city: string | null; latitude: number | null; longitude: number | null; label: string | null; confidence: number };
 type ContestRow = { id: string; orgao: string; banca: string | null; titulo: string; cargos?: string[] | null; escolaridade?: string[] | null; edital_number?: string | null; process_number?: string | null; official_slug?: string | null; official_source?: string | null; cargo_key?: string | null; cargo_group_key?: string | null; edital_url?: string | null; logical_key?: string | null; quality_status?: string | null; merged_into_id?: string | null; [key: string]: unknown };
@@ -103,7 +104,8 @@ export async function syncConcursoFromDocument(
     cargos: deterministic.cargos.length ? deterministic.cargos : aiValue("cargos", extracted.cargos) || [],
     escolaridade: deterministic.escolaridade.length ? deterministic.escolaridade : aiValue("escolaridade", extracted.escolaridade) || [],
   };
-  const hot = calcHotScoreWithReasons({ status: extracted.status, vagas: values.vagas, salario: values.salario, prova_data: values.prova_data, inscricao_inicio: values.inscricao_inicio, inscricao_fim: values.inscricao_fim, tier });
+  const evidencedStatus = resolveEvidencedContestStatus({ value: extracted.status, evidence: aiEvidence.status, rawText, sourceTier: tier });
+  const hot = calcHotScoreWithReasons({ status: evidencedStatus, vagas: values.vagas, salario: values.salario, prova_data: values.prova_data, inscricao_inicio: values.inscricao_inicio, inscricao_fim: values.inscricao_fim, tier });
   const identity = extractIdentitySignals({ title: doc.identityTitle || doc.title, url: doc.contestUrl || doc.canonicalUrl, rawText: doc.rawText, sourceName: doc.sourceName, orgao, banca, cargos: values.cargos, escolaridade: values.escolaridade });
   const incomingAliases = [...aliasesFromIdentity(identity, doc.sourceName, doc.canonicalUrl), ...aliasesFromText(`${doc.title}\n${doc.rawText || ""}`, doc.sourceName, doc.canonicalUrl)];
   const key = stableEntityKey(identity);
@@ -156,7 +158,10 @@ export async function syncConcursoFromDocument(
       possibleDuplicate = { id: scored.candidate.id, score: scored.resolution.score, reason: scored.resolution.reason, hardConflicts: scored.resolution.hardConflicts };
     }
   }
-  const incoming: Record<string, unknown> = { orgao, banca, titulo: matched?.titulo || doc.title.slice(0, 200), ...values, status: aiValue("status", extracted.status), scope: loc.scope, state_code: loc.state_code, city: loc.city };
+  const previousStatus = normalizeContestStatus(typeof matched?.status === "string" ? matched.status : null);
+  const transitionIsAmendment = ["RETIFICATION", "REPUBLICATION", "REOPENING"].includes(relationship.relationship);
+  const acceptedStatus = evidencedStatus && canTransitionContestStatus(previousStatus, evidencedStatus, { sourceTier: tier, hasEvidence: true, isAmendment: transitionIsAmendment }) ? evidencedStatus : (matched?.status ?? null);
+  const incoming: Record<string, unknown> = { orgao, banca, titulo: matched?.titulo || doc.title.slice(0, 200), ...values, status: acceptedStatus, scope: loc.scope, state_code: loc.state_code, city: loc.city };
   let conflicted = false;
   let fieldDecisions: Record<string, TrackedFieldDecision> = {};
   if (matched) {
@@ -186,14 +191,15 @@ export async function syncConcursoFromDocument(
   }
   const changes: Record<string, unknown>[] = [];
   if (matched) {
-    const tracked: Record<string, unknown> = { orgao, banca, ...values, status: aiValue("status", extracted.status) };
+    const tracked: Record<string, unknown> = { orgao, banca, ...values, status: acceptedStatus };
     // The resolver has already determined whether the incoming evidence conflicts.
     for (const [field, nextValue] of Object.entries(tracked)) {
       const oldValue = (matched as Record<string, unknown>)[field];
       if (oldValue == null || nextValue == null || JSON.stringify(oldValue) === JSON.stringify(nextValue)) continue;
       const decision = fieldDecisions[field];
       if (!decision || decision.decision !== "ACCEPT_NEW" || JSON.stringify(oldValue) === JSON.stringify(decision.resolvedValue)) continue;
-      changes.push({ field_name: field, old_value: oldValue, new_value: decision.resolvedValue, source_url: doc.canonicalUrl, relationship_type: persistedRelationship });
+      const matchingEvidence = evidence.find((item) => item.field === field && JSON.stringify(item.value) === JSON.stringify(decision.resolvedValue));
+      changes.push({ field_name: field, old_value: oldValue, new_value: decision.resolvedValue, source_url: doc.canonicalUrl, source_name: doc.sourceName || null, source_tier: tier, evidence_text: matchingEvidence?.evidence || aiEvidence[field as keyof typeof aiEvidence] || doc.title, observed_at: doc.publishedAt || new Date().toISOString(), relationship_type: persistedRelationship });
     }
   }
   if (!doc.documentId) throw new Error("COLLECTOR_DOCUMENT_REQUIRED");
