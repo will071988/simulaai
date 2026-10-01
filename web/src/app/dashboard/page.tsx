@@ -99,7 +99,7 @@ export default function DashboardPage() {
           </section>
 
           <section className="mt-6 rounded-3xl bg-white p-6 text-zinc-900">
-            <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-display text-xl font-bold">Últimos simulados</h2><p className="text-sm text-zinc-500">Histórico real das suas tentativas concluídas.</p></div><Link href="/simulados" className="rounded-full bg-zinc-900 px-5 py-2 text-sm font-bold text-white">Novo simulado</Link></div>
+            <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-display text-xl font-bold">Últimos simulados</h2><p className="text-sm text-zinc-500">Histórico real das suas tentativas concluídas.</p></div><div className="flex gap-2"><Link href="/plano" className="rounded-full border border-zinc-300 px-5 py-2 text-sm font-bold">Plano de estudos</Link><Link href="/simulados" className="rounded-full bg-zinc-900 px-5 py-2 text-sm font-bold text-white">Novo simulado</Link></div></div>
             <div className="mt-4 divide-y">{progress!.recentAttempts.map((attempt) => <div key={attempt.attemptId} className="grid gap-2 py-4 sm:grid-cols-[1fr_auto_auto] sm:items-center">
               <div><p className="font-bold">{attempt.title}</p><p className="text-xs text-zinc-500">{date(attempt.completedAt)} · {attempt.answeredCount}/{attempt.questionCount} respondidas · {attempt.correctCount} acertos · {attempt.errorCount} erros</p></div>
               <span className="text-sm text-zinc-500">{duration(attempt.durationSeconds)}</span><b className="text-lg text-violet-700">{Number(attempt.score).toFixed(1)}%</b>

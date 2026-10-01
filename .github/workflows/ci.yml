@@ -44,6 +44,7 @@ jobs:
       - run: npm run test:1.9
       - run: npm run test:2.0
       - run: npm run test:2.1
+      - run: npm run test:2.2
       - run: npm run test:publication-policy
       - run: npm run test:collector-observability
       - run: npm run test:collector-idempotency
