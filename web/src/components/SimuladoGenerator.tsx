@@ -6,7 +6,8 @@ type ContestOption = { id: string; titulo: string; orgao: string; banca: string 
 type Options = { concursos: ContestOption[]; cargos: string[]; disciplinas: string[]; assuntos: string[]; bancas: string[]; niveis: string[] };
 type PublicQuestion = { id: string; disciplina: string; assunto: string; dificuldade: string; enunciado: string; alternativas: Array<{ key: string; text: string }> };
 type Attempt = { attemptId: string; token: string; seed: string; title: string; mode: string; questions: PublicQuestion[] };
-type Result = { score: number; correctCount: number; total: number; durationSeconds: number; status: string };
+type Correction = { questionId: string; userAnswer: string | null; correctAnswer: string; isCorrect: boolean; explanation: null | { text: string; wrongAlternatives: Record<string, string>; conceptualReference: string; explanationQuality: number; confidence: number; source: string } };
+type Result = { score: number; correctCount: number; total: number; durationSeconds: number; status: string; corrections: Correction[] };
 
 const modes = [
   ["RAPIDO", "Rápido"], ["COMPLETO", "Completo"], ["POR_MATERIA", "Por matéria"],
@@ -95,12 +96,29 @@ export function SimuladoGenerator() {
       </div>
 
       {result ? (
-        <div className="mt-5 rounded-[28px] bg-white p-7 text-zinc-900">
-          <p className="text-sm font-bold text-violet-600">CORREÇÃO CONCLUÍDA NO SERVIDOR</p>
-          <div className="mt-3 flex flex-wrap items-end justify-between gap-5">
-            <div><h3 className="font-display text-4xl font-black">{Number(result.score).toFixed(2)}%</h3><p className="mt-1 text-zinc-600">{result.correctCount} acertos em {result.total} questões · {Math.floor(result.durationSeconds / 60)}m {result.durationSeconds % 60}s</p></div>
-            <button onClick={reset} className="rounded-full bg-zinc-900 px-6 py-3 font-bold text-white">Criar outro simulado</button>
+        <div className="mt-5 space-y-4">
+          <div className="rounded-[28px] bg-white p-7 text-zinc-900">
+            <p className="text-sm font-bold text-violet-600">CORREÇÃO CONCLUÍDA NO SERVIDOR</p>
+            <div className="mt-3 flex flex-wrap items-end justify-between gap-5">
+              <div><h3 className="font-display text-4xl font-black">{Number(result.score).toFixed(2)}%</h3><p className="mt-1 text-zinc-600">{result.correctCount} acertos em {result.total} questões · {Math.floor(result.durationSeconds / 60)}m {result.durationSeconds % 60}s</p></div>
+              <button onClick={reset} className="rounded-full bg-zinc-900 px-6 py-3 font-bold text-white">Criar outro simulado</button>
+            </div>
           </div>
+          {result.corrections.map((correction, index) => {
+            const question = attempt.questions.find((item) => item.id === correction.questionId);
+            return <article key={correction.questionId} className={`rounded-3xl border-2 bg-white p-6 text-zinc-900 ${correction.isCorrect ? "border-emerald-200" : "border-red-200"}`}>
+              <p className="text-xs font-black tracking-widest text-violet-600">QUESTÃO {index + 1} · {correction.isCorrect ? "ACERTO" : "REVISAR"}</p>
+              <p className="mt-2 font-medium">{question?.enunciado}</p>
+              <p className="mt-3 text-sm">Sua resposta: <b>{correction.userAnswer || "Não respondida"}</b> · Resposta correta: <b>{correction.correctAnswer}</b></p>
+              {correction.explanation ? <div className="mt-4 rounded-2xl bg-zinc-50 p-4">
+                <h4 className="font-bold text-violet-700">Explicação confiável</h4>
+                <p className="mt-1 text-sm leading-relaxed text-zinc-700">{correction.explanation.text}</p>
+                <p className="mt-3 text-xs font-bold uppercase tracking-wide text-zinc-500">Por que as demais estão erradas</p>
+                <ul className="mt-2 space-y-2 text-sm text-zinc-700">{Object.entries(correction.explanation.wrongAlternatives).map(([key, reason]) => <li key={key}><b>{key})</b> {reason}</li>)}</ul>
+                <p className="mt-3 border-t pt-3 text-xs text-zinc-500">Referência conceitual: {correction.explanation.conceptualReference} · qualidade {(Number(correction.explanation.explanationQuality) * 100).toFixed(0)}% · confiança {(Number(correction.explanation.confidence) * 100).toFixed(0)}%</p>
+              </div> : <p className="mt-4 rounded-2xl bg-amber-50 p-4 text-sm text-amber-900">Explicação não exibida: ainda não atingiu o nível mínimo de confiança.</p>}
+            </article>;
+          })}
         </div>
       ) : (
         <>
