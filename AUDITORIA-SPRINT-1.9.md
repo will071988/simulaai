@@ -1,7 +1,7 @@
 # Auditoria da Sprint 1.9 — Explicações e correção inteligente
 
 Data: 01/10/2026
-Status: implementação concluída; gates remotos finais em andamento
+Status: concluída
 
 ## Escopo entregue
 
@@ -42,7 +42,8 @@ Status: implementação concluída; gates remotos finais em andamento
 
 ## Gates remotos finais
 
-- Commit/push: pendente.
-- GitHub Actions: pendente.
-- Deployment Vercel: pendente.
-- Smoke de produção e Chrome: pendente.
+- Commit de implementação: `2e0773ea6edc76b2ed89a0caf305d4c457e070a9`, publicado em `origin/main`.
+- GitHub Actions: execução `36842292175`, concluída com sucesso em todos os gates.
+- Deployment Vercel: `dpl_5FKorwk15e8cbfjKtWa7M383RR8u`, status `Ready`, com alias `https://simulaai-kappa.vercel.app`.
+- Smoke API em produção: 3 questões criadas sem vazamento inicial; 3 correções retornadas; todas com gabarito, referência, razões das alternativas erradas, confiança e qualidade acima do limiar; nota calculada no servidor.
+- Smoke visual no Chrome: três questões PF concluídas; cada cartão mostrou resposta correta, explicação confiável, justificativas específicas para B/C/D, referência conceitual, qualidade 90% e confiança 95%.
