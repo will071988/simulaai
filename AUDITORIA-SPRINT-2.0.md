@@ -1,7 +1,7 @@
 # Auditoria da Sprint 2.0 — Autenticação e conta do usuário
 
 Data: 01/10/2026
-Status: implementação concluída; gates remotos finais em andamento
+Status: concluída
 
 ## Escopo entregue
 
@@ -49,7 +49,10 @@ Status: implementação concluída; gates remotos finais em andamento
 
 ## Gates remotos finais
 
-- Commit/push: pendente.
-- GitHub Actions: pendente.
-- Deployment Vercel: pendente.
-- Smoke de produção/Chrome: pendente.
+- Commit de implementação: `32310786d13ba3cbf453fe80af63f253fbcfa6ad`, publicado em `origin/main`.
+- GitHub Actions: execução `36844274743`, concluída com sucesso em todos os gates.
+- Deployment Vercel: `dpl_6ZA6BuGytdHud1kXcDBx7dkiRoUL`, status `Ready`, com alias `https://simulaai-kappa.vercel.app`.
+- Smoke HTTP: `/api/account` sem bearer token retornou 401 e `UNAUTHORIZED`; nenhuma informação de perfil foi exposta.
+- Configuração pública do Supabase Auth: provedor de e-mail e cadastro habilitados; confirmação de e-mail obrigatória (`mailer_autoconfirm=false`).
+- Smoke visual no Chrome: `/conta` respondeu em produção, alternou entre Entrar/Criar conta, exibiu somente nome/e-mail/senha no cadastro, disponibilizou link mágico apenas no login e não apresentou login social.
+- Não foi criada conta fictícia em produção: como a confirmação por caixa postal é obrigatória, criação de perfil, isolamento por usuário, atualização e exclusão/cascata foram provados com dois usuários no banco isolado; logout local e renovação de sessão permanecem implementados pelo SDK sem deixar identidade órfã no Auth real.
