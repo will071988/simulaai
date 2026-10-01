@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AccountNav } from "@/components/AccountNav";
 
 export function Header() {
   return (
@@ -16,8 +17,7 @@ export function Header() {
           <Link href="/#planos" className="hover:text-white">Planos</Link>
         </nav>
         <div className="flex items-center gap-2">
-          <Link href="/simulados" className="hidden sm:inline text-sm px-4 py-2 rounded-full border border-white/15 hover:bg-white hover:text-black transition">Entrar</Link>
-          <Link href="/simulados" className="text-sm px-5 py-2.5 rounded-full bg-white text-black font-semibold hover:bg-zinc-100 transition shimmer">Começar grátis</Link>
+          <AccountNav />
         </div>
       </div>
     </header>

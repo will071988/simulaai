@@ -5,6 +5,11 @@ import { createClient } from "@supabase/supabase-js";
 export async function createCollectorDatabase() {
   const db = new PGlite();
   await db.exec("create role service_role; create role anon; create role authenticated;");
+  await db.exec(`create schema auth;
+    create table auth.users(id uuid primary key default gen_random_uuid(), email text, raw_user_meta_data jsonb not null default '{}'::jsonb, created_at timestamptz not null default now());
+    create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
+    grant usage on schema auth to anon, authenticated;
+    grant execute on function auth.uid() to anon, authenticated;`);
   const migrations = [
     "20260921174006_simulaai_init", "20260922141814_collector_core",
     "20260922173024_collector_health_versioning", "20260922174745_collector_lock",
@@ -16,7 +21,7 @@ export async function createCollectorDatabase() {
   for (const name of migrations) await db.exec(readFileSync(`../supabase/migrations/${name}.sql`, "utf8"));
   await db.exec('alter table concursos enable row level security; create policy "public read concursos" on concursos for select using (true); grant select on concursos to anon;');
   for (const name of ["20260928150000_disable_unsupported_collector_sources", "20260928170000_publication_and_change_idempotency"]) await db.exec(readFileSync(`../supabase/migrations/${name}.sql`, "utf8"));
-  for (const name of ["20260929120000_autonomous_collector", "20260929121000_atomic_contest_document", "20260930020000_collector_retry_recovery", "20260930021000_retry_official_url_identity_failures", "20260930022000_cleanup_false_factual_evidence", "20260930030000_source_registry_and_curated_status", "20260930031000_backfill_change_evidence", "20260930032000_register_evaluated_discovery_sources", "20260930040000_professional_question_bank", "20260930050000_simulado_engine", "20260930051000_attempt_token_uniqueness", "20261001060000_trusted_explanation_cache"]) await db.exec(readFileSync(`../supabase/migrations/${name}.sql`, "utf8"));
+  for (const name of ["20260929120000_autonomous_collector", "20260929121000_atomic_contest_document", "20260930020000_collector_retry_recovery", "20260930021000_retry_official_url_identity_failures", "20260930022000_cleanup_false_factual_evidence", "20260930030000_source_registry_and_curated_status", "20260930031000_backfill_change_evidence", "20260930032000_register_evaluated_discovery_sources", "20260930040000_professional_question_bank", "20260930050000_simulado_engine", "20260930051000_attempt_token_uniqueness", "20261001060000_trusted_explanation_cache", "20261001070000_user_identity_and_profiles"]) await db.exec(readFileSync(`../supabase/migrations/${name}.sql`, "utf8"));
   const identifier = (value: string) => {
     if (!/^[a-z_]+$/.test(value)) throw new Error("INVALID_TEST_SQL_IDENTIFIER");
     return `"${value}"`;
