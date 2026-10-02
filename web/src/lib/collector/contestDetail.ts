@@ -28,6 +28,7 @@ export type ConcursoDetailData = {
   cargo_key: string | null;
   cargo_group_key: string | null;
   edital_url: string | null;
+  updated_at: string;
   simulado_slug: string | null;
   requested_id: string;
   canonical_id: string;

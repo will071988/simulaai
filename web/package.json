@@ -34,6 +34,7 @@
     "test:2.2": "tsx scripts/validate-2.2.ts && tsx scripts/validate-2.2-database.ts",
     "test:2.3": "tsx scripts/validate-2.3.ts && tsx scripts/validate-2.3-database.ts",
     "test:2.4": "tsx scripts/validate-2.4.ts && tsx scripts/validate-2.4-database.ts",
+    "test:2.5": "tsx scripts/validate-2.5.ts",
     "test:ai-budget": "tsx scripts/validate-ai-budget.ts",
     "test:publication-policy": "tsx scripts/validate-publication-policy.ts",
     "test:collector-observability": "tsx scripts/validate-collector-observability.ts",

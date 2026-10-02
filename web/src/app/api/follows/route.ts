@@ -10,6 +10,14 @@ export async function GET(request: Request) {
   const user = await authenticatedUser(request);
   if (!user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401, headers: noStore });
   const svc = supabaseService();
+  const requestedId = new URL(request.url).searchParams.get("concursoId");
+  if (requestedId) {
+    const id = z.string().uuid().safeParse(requestedId);
+    if (!id.success) return NextResponse.json({ error: "INVALID_CONTEST_ID" }, { status: 400, headers: noStore });
+    const follow = await svc.from("contest_follows").select("concurso_id,is_favorite,is_following,updated_at").eq("user_id", user.id).eq("concurso_id", id.data).maybeSingle();
+    if (follow.error) return NextResponse.json({ error: "FOLLOWS_QUERY_FAILED" }, { status: 500, headers: noStore });
+    return NextResponse.json({ data: { follow: follow.data || null } }, { headers: noStore });
+  }
   const [follows, contests] = await Promise.all([
     svc.from("contest_follows").select("concurso_id,is_favorite,is_following,updated_at").eq("user_id", user.id).order("updated_at", { ascending: false }),
     svc.from("concursos").select("id,titulo,orgao,status,inscricao_fim,prova_data").eq("is_publishable", true).is("merged_into_id", null).order("hot_score", { ascending: false }).limit(100),
