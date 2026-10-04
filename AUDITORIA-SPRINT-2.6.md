@@ -23,6 +23,8 @@ Migração aditiva `20261004203913_admin_operations.sql` aplicada ao projeto Sup
 
 `test:2.6` valida esquema estrito de entrada, URLs, negação de API anônima, autorização no banco, quatro ações auditadas, preservação de dados e rejeição de comando arbitrário. A função remota também recusou um usuário não vinculado com `OPS_FORBIDDEN`, sem alterar dados. TypeScript, lint completo, build de produção e `npm audit --omit=dev` (zero vulnerabilidades) passaram.
 
+O teste de banco também comprova que a aprovação grava revisor, URL oficial e trilha de auditoria e satisfaz o gatilho de governança para ativação controlada de uma fonte; um candidato rejeitado não satisfaz esse gatilho. Essa prova usa somente dados efêmeros de teste, sem ativar adaptadores ou candidatos na produção.
+
 Uma checagem remota somente de leitura encontrou 0 documentos pendentes de IA, 1 ocorrência de esquema inválido nas últimas 20 execuções e 63 falhas de IA em sete dias. Esses dados motivaram a exibição detalhada; a visualização autenticada no painel ainda não foi comprovada.
 
 ## Commit, CI e deployment
