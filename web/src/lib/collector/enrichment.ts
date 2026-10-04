@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { isSchoolingCategory } from "../contest-role";
 
 export type Evidence = { field: string; value: unknown; evidence: string; confidence: number };
 export type Enriched = { orgao: string | null; banca: string | null; vagas: number | null; cadastro_reserva: number | null; salario: number | null; inscricao_inicio: string | null; inscricao_fim: string | null; prova_data: string | null; scope: string | null; state_code: string | null; city: string | null; location_label: string | null; cargos: string[]; escolaridade: string[]; evidence: Evidence[] };
@@ -37,7 +38,14 @@ export function enrichDocument(title: string, text: string): Enriched {
   let scope: string | null = null; if (/abrang[eê]ncia.{0,30}nacional|[aâ]mbito.{0,30}nacional|todo o territ[oó]rio nacional/i.test(locationText)) scope = "NACIONAL"; else if (city) scope = "MUNICIPAL"; else if (state_code) scope = "ESTADUAL";
   const location_label = city ? `${city} - abrangencia municipal` : state_code ? `${state_code} - abrangencia estadual` : scope === "NACIONAL" ? "Nacional - abrangencia nacional" : null;
   add("scope", scope, /nacional|Prefeitura|Estado do|\b(?:PC|PM|TJ|SEFAZ)[- ]?[A-Z]{2}\b/i, 0.85); add("state_code", state_code, /Estado do|\b(?:PC|PM|TJ|SEFAZ)[- ]?[A-Z]{2}\b/i, 0.85); add("city", city, /Prefeitura(?: Municipal)? de/i, 0.85);
-  const cargos = [...all.matchAll(/(?:cargo(?:s)?|fun[cç][aã]o)\s*(?:de|:)?\s*([A-Za-zÀ-ÿ ]{3,70})/gi)].map((m) => m[1].trim()).filter((x, i, a) => x.length > 3 && a.indexOf(x) === i).slice(0, 8); if (cargos.length) add("cargos", cargos, /cargo(?:s)?|fun[cç][aã]o/i, 0.75);
+  const cargoMatches = [...all.matchAll(/\b(?:cargo(?:s)?|fun[cç][aã]o)\s*(?:de\s+|:\s*)?([A-Za-zÀ-ÿ ]{3,70})/gi)]
+    .map((match) => ({ value: match[1].trim(), excerpt: match[0].trim() }))
+    .filter((item, index, items) => item.value.length > 3 && !isSchoolingCategory(item.value) && items.findIndex((candidate) => candidate.value === item.value) === index)
+    .slice(0, 8);
+  const cargos = cargoMatches.map((item) => item.value);
+  for (const item of cargoMatches) evidence.push({ field: "cargos", value: [item.value], evidence: item.excerpt, confidence: 0.75 });
+  // Canonical array changes require exact-value evidence in the atomic database contract.
+  if (cargoMatches.length > 1) evidence.push({ field: "cargos", value: cargos, evidence: cargoMatches.map((item) => item.excerpt).join("\n"), confidence: 0.75 });
   const educationPatterns = [
     [/(?:ensino|n[ií]vel|escolaridade|requisito|forma[cç][aã]o)[^\n]{0,80}fundamental|fundamental\s+(?:completo|incompleto)/i, "FUNDAMENTAL"],
     [/(?:ensino|n[ií]vel|escolaridade|requisito|forma[cç][aã]o)[^\n]{0,80}m[eé]dio|m[eé]dio\s+(?:completo|incompleto)/i, "MEDIO"],

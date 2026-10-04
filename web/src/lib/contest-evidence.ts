@@ -1,3 +1,5 @@
+import { isSchoolingCategory } from "./contest-role";
+
 export type PublicEvidence = {
   field_name: string; value_json: unknown; source_url: string; source_tier: number;
   evidence_text: string; [key: string]: unknown;
@@ -33,6 +35,7 @@ export function filterCurrentContestEvidence(contest: Record<string, unknown>, e
   if (typeof contest.edital_url === "string") linkedSources.add(contest.edital_url);
   return evidence.filter((item) => supportedFields.has(item.field_name)
     && item.invalidation_reason == null
+    && (item.field_name !== "cargos" || !(Array.isArray(item.value_json) ? item.value_json : [item.value_json]).some(isSchoolingCategory))
     && item.source_tier >= 1 && item.source_tier <= 3
     && isPublicSourceUrl(item.source_url)
     && linkedSources.has(item.source_url)

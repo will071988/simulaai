@@ -44,19 +44,23 @@ Dados remotos preservados conforme comparação acima. Validação visual e smok
 
 ## Commit
 
-Correções posteriores a `85391eb` compõem o commit de hardening que inclui este relatório; SHA será registrado após criação.
+Hardening: `0f9d92f3fb78f421d9befa29b158f63e9a667f06`, enviado para `origin/main`.
 
 ## CI
 
-CI da versão corrigida pendente.
+GitHub Actions `37216630574`, SHA `0f9d92f3fb78f421d9befa29b158f63e9a667f06`: concluído com sucesso.
 
 ## Deployment
 
-Deploy da versão corrigida pendente.
+Deployment `dpl_428gbkGFm8WAc8U3TWK4U5N34YtS`, Ready, com alias `https://simulaai-kappa.vercel.app`.
 
 ## Production Smoke
 
-Pendente para a versão corrigida. A verificação remota do banco não substitui o smoke da aplicação.
+Chrome em produção: Salvador exibe previsão não confirmada, campos ausentes sem confirmação e não mostra mais evidência de cookies. CTA abre o motor real e informa corretamente que Salvador ainda não tem questões publicadas, sem selecionar outro concurso silenciosamente.
+
+**Achado do smoke:** o parser classificou `Nível Superior` como cargo. Correção local do parser e da proveniência implementada com regressões que preservam cargos reais como `Técnico em Informática` e exigem trecho próprio por cargo. Novo commit/deploy e reteste visual ainda pendentes. Fluxos autenticados e smoke HTTP completo ainda pendentes.
+
+Migração adicional `20261004162956_quarantine_schooling_as_role.sql` aplicada após dry-run em 04/10/2026: amplia a invalidação gerada, preserva o valor canônico anterior em `concurso_field_corrections` (RLS e sem acesso público) e corrige Salvador para lista de cargos vazia. Auditoria remota: 1 correção preservada; 102 evidências com a mesma assinatura original; 13 invalidadas no total. Os 3 casos adicionais foram inspecionados: `Nível Superior` e duas ocorrências históricas de `Nível Médio de`, todos sem nome de cargo real. Nenhum registro de evidência foi excluído.
 
 ## Riscos residuais
 

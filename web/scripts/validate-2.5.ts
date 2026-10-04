@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { filterCurrentContestEvidence, hasOfficialFieldEvidence, isContestId, isPublicSourceUrl } from "../src/lib/contest-evidence";
 import { presentContest } from "../src/lib/contest-presentation";
+import { enrichDocument } from "../src/lib/collector/enrichment";
+import { isSchoolingCategory } from "../src/lib/contest-role";
 
 const page = readFileSync("src/app/concursos/[id]/page.tsx", "utf8");
 const data = readFileSync("src/lib/contest-page.ts", "utf8");
@@ -54,3 +56,16 @@ assert.equal(presentContest({ ...base, status: "previsto" }).badge, "PREVISÃO N
 assert.equal(presentContest({ ...base, status: "previsto", evidence: [...base.evidence, { ...evidence[0], field_name: "status", value_json: "previsto" }] }).badge, "PREVISTO");
 assert.deepEqual(filterCurrentContestEvidence({ ...current, escolaridade: ["TECNICO"] }, [{ ...evidence[2], evidence_text: "Nosso website coleta informações\ne usa cookies\npara funcionamento técnico" }], base.documents), [], "multiline cookie banners must be rejected even when their extracted value matches");
 console.log("Sprint 2.5 professional contest page, provenance separation, CTAs, map and structured SEO tests passed");
+const roles = enrichDocument("Concurso público", "para cargos de Nível Superior, conforme disposto no Edital.\nCargo: Analista Administrativo\nCargo: Técnico em Informática");
+assert.deepEqual(roles.cargos, ["Analista Administrativo", "Técnico em Informática"]);
+assert.ok(roles.escolaridade.includes("SUPERIOR"), "rejecting a fake role must preserve schooling extraction");
+assert.equal(isSchoolingCategory("Técnico em Informática"), false, "real technical roles must survive");
+assert.equal(isSchoolingCategory("Nível médio"), true);
+assert.ok(roles.evidence.some((item) => item.field === "cargos" && JSON.stringify(item.value) === JSON.stringify(roles.cargos)), "multi-role changes require exact-array evidence for atomic persistence");
+for (const item of roles.evidence.filter((item) => item.field === "cargos")) {
+  assert.ok(item.evidence.includes(String((item.value as string[])[0])), "each role needs its own matching excerpt");
+  assert.doesNotMatch(item.evidence, /Nível Superior/);
+}
+const fakeRole = { ...evidence[4], value_json: ["Nível Superior"] };
+assert.deepEqual(filterCurrentContestEvidence({ ...current, cargos: ["Nível Superior"] }, [fakeRole], base.documents), [], "legacy schooling claims cannot confirm a role");
+console.log("Sprint 2.5 schooling/role separation and per-role evidence regression passed");

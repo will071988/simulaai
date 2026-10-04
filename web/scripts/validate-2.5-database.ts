@@ -25,6 +25,20 @@ async function main() {
     assert.deepEqual(repeated.rows, before.rows, "repeat migration is non-destructive and idempotent");
     const privileges = await db.query<{ anon: boolean; authenticated: boolean; service: boolean }>("select has_function_privilege('anon','persist_contest_document(jsonb)','execute') anon, has_function_privilege('authenticated','persist_contest_document(jsonb)','execute') authenticated, has_function_privilege('service_role','persist_contest_document(jsonb)','execute') service");
     assert.deepEqual(privileges.rows[0], { anon: false, authenticated: false, service: true });
+    await db.query("update concursos set cargos='[\"Nível Superior\"]'::jsonb where id=$1", [contest.rows[0].id]);
+    await db.query("insert into concurso_field_evidence(concurso_id,field_name,value_json,value_hash,source_url,source_tier,evidence_text,confidence) values($1,'cargos','[\"Nível Superior\"]','schooling-role','https://official.test/contest',1,'para cargos de Nível Superior, conforme disposto no Edital.',0.75)", [contest.rows[0].id]);
+    const schoolingMigration = readFileSync("../supabase/migrations/20261004162956_quarantine_schooling_as_role.sql", "utf8");
+    await db.exec(schoolingMigration);
+    const role = await db.query<{ cargos: string[] }>("select cargos from concursos where id=$1", [contest.rows[0].id]);
+    assert.deepEqual(role.rows[0].cargos, []);
+    const correction = await db.query<{ old_value: string[]; new_value: string[] }>("select old_value,new_value from concurso_field_corrections where concurso_id=$1", [contest.rows[0].id]);
+    assert.deepEqual(correction.rows, [{ old_value: ["Nível Superior"], new_value: [] }]);
+    const quarantinedRole = await db.query<{ invalidation_reason: string }>("select invalidation_reason from concurso_field_evidence where concurso_id=$1 and value_hash='schooling-role'", [contest.rows[0].id]);
+    assert.equal(quarantinedRole.rows[0].invalidation_reason, "SCHOOLING_NOT_A_ROLE");
+    await db.exec(schoolingMigration);
+    assert.equal((await db.query<{ count: number }>("select count(*)::int as count from concurso_field_corrections where concurso_id=$1", [contest.rows[0].id])).rows[0].count, 1);
+    const auditAccess = await db.query<{ anon: boolean; authenticated: boolean; rls: boolean }>("select has_table_privilege('anon','concurso_field_corrections','select') anon, has_table_privilege('authenticated','concurso_field_corrections','select') authenticated, (select relrowsecurity from pg_class where oid='concurso_field_corrections'::regclass) rls");
+    assert.deepEqual(auditAccess.rows[0], { anon: false, authenticated: false, rls: true });
     console.log("Sprint 2.5 PostgreSQL evidence quarantine preserves audit data, rejects invalid changes, remains idempotent and restricts RPC privileges");
   } finally { await db.close(); }
 }
