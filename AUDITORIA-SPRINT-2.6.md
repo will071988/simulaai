@@ -13,6 +13,7 @@ Painel privado para saúde do coletor, fontes, fila de IA, documentos falhos, co
 - `ops_apply_action` aceita apenas quatro ações, verifica novamente o vínculo admin no banco e grava a mutação e a auditoria na mesma transação. A revisão de conflito registra nota, sem alterar a classificação factual do concurso. Aprovar candidato não ativa automaticamente um adaptador desconhecido.
 - Tabelas operacionais têm RLS, sem políticas para `anon`/`authenticated`, e a função privilegiada é executável somente por `service_role`.
 - O painel descarta respostas assíncronas antigas após troca de sessão/logout.
+- O painel permite atualização explícita e detalha documentos pendentes de IA, tentativas futuras, falhas de IA nos últimos sete dias e execuções com esquema inválido. Em caso de resposta incerta a uma ação, recarrega estado e auditoria antes de recomendar nova tentativa.
 
 ## Banco
 
@@ -21,6 +22,8 @@ Migração aditiva `20261004203913_admin_operations.sql` aplicada ao projeto Sup
 ## Testes
 
 `test:2.6` valida esquema estrito de entrada, URLs, negação de API anônima, autorização no banco, quatro ações auditadas, preservação de dados e rejeição de comando arbitrário. A função remota também recusou um usuário não vinculado com `OPS_FORBIDDEN`, sem alterar dados. TypeScript, lint completo, build de produção e `npm audit --omit=dev` (zero vulnerabilidades) passaram.
+
+Uma checagem remota somente de leitura encontrou 0 documentos pendentes de IA, 1 ocorrência de esquema inválido nas últimas 20 execuções e 63 falhas de IA em sete dias. Esses dados motivaram a exibição detalhada; a visualização autenticada no painel ainda não foi comprovada.
 
 ## Commit, CI e deployment
 

@@ -23,7 +23,8 @@ export async function GET(request: Request) {
     if (!access.user) return reply({ ok: false, error: access.status === 401 ? "AUTH_REQUIRED" : access.status === 403 ? "ADMIN_ONLY" : "ADMIN_LOOKUP_FAILED" }, access.status);
     const svc = supabaseService();
     const today = new Date().toISOString().slice(0, 10);
-    const [runs, sources, pending, failed, conflicts, duplicates, candidates, budget, usage, reviews, actions] = await Promise.all([
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const [runs, sources, pending, failed, conflicts, duplicates, candidates, budget, aiFailures, reviews, actions] = await Promise.all([
       svc.from("collector_runs").select("id,started_at,finished_at,status,sources_checked,sources_success,sources_failed,documents_new,ai_requests,ai_success,ai_invalid_schema,ai_pending,parse_failed,errors_count,stage_results").order("started_at", { ascending: false }).limit(20),
       svc.from("collector_sources").select("id,name,base_url,source_type,tier,enabled,health_status,failure_count,last_status,last_error_code,last_success_at,last_failure_at,last_checked_at").order("name").limit(100),
       svc.from("collector_documents").select("id,title,source_url,document_type,status,ai_retry_count,ai_last_error_code,ai_next_attempt_at,collected_at", { count: "exact" }).eq("status", "AI_PENDING").order("collected_at", { ascending: false }).limit(50),
@@ -32,11 +33,11 @@ export async function GET(request: Request) {
       svc.from("concurso_duplicate_candidates").select("id,concurso_a_id,concurso_b_id,score,reason,status,created_at", { count: "exact" }).eq("status", "POSSIBLE_DUPLICATE").order("created_at", { ascending: false }).limit(50),
       svc.from("source_candidates").select("id,url,domain,reason,confidence,status,official_url,reviewed_at,review_notes,created_at", { count: "exact" }).eq("status", "CANDIDATE").order("created_at", { ascending: false }).limit(50),
       svc.from("ai_daily_budget").select("budget_day,reserved_count").eq("budget_day", today).maybeSingle(),
-      svc.from("ai_usage_logs").select("id,provider,model,task_type,success,latency_ms,error_code,created_at").order("created_at", { ascending: false }).limit(30),
+      svc.from("ai_usage_logs").select("id,provider,model,task_type,error_code,created_at", { count: "exact" }).eq("success", false).gte("created_at", sevenDaysAgo).order("created_at", { ascending: false }).limit(30),
       svc.from("ops_conflict_reviews").select("concurso_id,review_note,reviewed_at").order("reviewed_at", { ascending: false }).limit(50),
       svc.from("ops_action_log").select("id,action,target_id,note,created_at").order("created_at", { ascending: false }).limit(30),
     ]);
-    const results = [runs, sources, pending, failed, conflicts, duplicates, candidates, budget, usage, reviews, actions];
+    const results = [runs, sources, pending, failed, conflicts, duplicates, candidates, budget, aiFailures, reviews, actions];
     if (results.some((item) => item.error)) return reply({ ok: false, error: "OPERATIONS_QUERY_FAILED" }, 503);
     return reply({ ok: true, data: {
       runs: runs.data || [], sources: sources.data || [], aiPending: pending.data || [], failedDocuments: failed.data || [],
@@ -44,7 +45,8 @@ export async function GET(request: Request) {
       counts: { aiPending: pending.count || 0, failedDocuments: failed.count || 0, conflictedContests: conflicts.count || 0, duplicateCandidates: duplicates.count || 0, sourceCandidates: candidates.count || 0 },
       invalidSchemas: (runs.data || []).reduce((sum, run) => sum + (run.ai_invalid_schema || 0), 0),
       aiBudget: { day: today, reserved: budget.data?.reserved_count || 0, limit: aiConfig.maxPerDay },
-      aiUsage: usage.data || [], conflictReviews: reviews.data || [], recentActions: actions.data || [],
+      aiFailures: aiFailures.data || [], aiFailureCount7d: aiFailures.count || 0,
+      conflictReviews: reviews.data || [], recentActions: actions.data || [],
     } });
   } catch {
     return reply({ ok: false, error: "OPERATIONS_UNAVAILABLE" }, 503);
