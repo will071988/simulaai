@@ -20,12 +20,20 @@ Migração aditiva `20261004203913_admin_operations.sql` aplicada ao projeto Sup
 
 ## Testes
 
-`test:2.6` valida esquema estrito de entrada, URLs, negação de API anônima, autorização no banco, quatro ações auditadas, preservação de dados e rejeição de comando arbitrário. A função remota também recusou um usuário não vinculado com `OPS_FORBIDDEN`, sem alterar dados. TypeScript, lint específico e build de produção passaram. CI completo ainda pendente.
+`test:2.6` valida esquema estrito de entrada, URLs, negação de API anônima, autorização no banco, quatro ações auditadas, preservação de dados e rejeição de comando arbitrário. A função remota também recusou um usuário não vinculado com `OPS_FORBIDDEN`, sem alterar dados. TypeScript, lint completo, build de produção e `npm audit --omit=dev` (zero vulnerabilidades) passaram.
+
+## Commit, CI e deployment
+
+Implementação em `aa31f7eaadaff67947b5544fbb124aebd44fb447`, enviada a `origin/main`. GitHub Actions `37234141359` para esse SHA: sucesso. Deployment Vercel `dpl_ACU2ZpJhsNwfw3gttRcdmgzAPJES`: production Ready, alias `https://simulaai-kappa.vercel.app`.
+
+## Production smoke público
+
+No alias de produção, `/admin/operacoes` responde 200 com `noindex`; `/api/admin/operations` responde 401 tanto a GET quanto a POST sem token. Chrome exibiu apenas o convite para entrar, sem métricas ou dados operacionais. A página pública não comprova o caminho autenticado, ainda pendente.
 
 ## Pendências de fechamento
 
 - Conta de administrador indicada e papel concedido explicitamente; nenhum acesso por inferência de e-mail.
-- CI, deploy e smoke de produção, incluindo leitura e ação com conta admin autorizada.
+- Smoke de produção autenticado, incluindo leitura e ação com conta admin autorizada.
 - Confirmar comportamento de aprovação de fontes no fluxo operacional real sem ativar adaptador não suportado.
 
 **SPRINT 2.6 ABERTA.** Não iniciar 2.7 antes dos gates e da validação autenticada.
