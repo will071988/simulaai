@@ -167,7 +167,7 @@ export async function syncConcursoFromDocument(
   if (matched) {
     const evidenceByField: Record<string, FieldEvidence[]> = {};
     for (const field of Object.keys(incoming)) {
-      const { data: evidence, error } = await svc.from("concurso_field_evidence").select("value_json,source_tier,observed_at,source_url,evidence_text").eq("concurso_id", matched.id).eq("field_name", field);
+      const { data: evidence, error } = await svc.from("concurso_field_evidence").select("value_json,source_tier,observed_at,source_url,evidence_text").eq("concurso_id", matched.id).eq("field_name", field).is("invalidation_reason", null);
       if (error) throw new Error("FIELD_EVIDENCE_QUERY_FAILED");
       evidenceByField[field] = (evidence || []) as FieldEvidence[];
     }

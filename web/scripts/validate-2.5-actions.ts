@@ -1,0 +1,40 @@
+import assert from "node:assert/strict";
+import { createContestFollowController, initialFollowState } from "../src/lib/contest-follow-controller";
+
+async function main() {
+  const id = "b195e9cd-aa71-4c94-99e0-641ab244a608";
+  let state = { ...initialFollowState };
+  const calls: Array<{ init?: RequestInit; resolve: (response: Response) => void; reject: (error: Error) => void }> = [];
+  const request: typeof fetch = async (_url, init) => new Promise<Response>((resolve, reject) => { calls.push({ init, resolve, reject }); });
+  const controller = createContestFollowController(id, (next) => { state = next; }, request);
+  const response = (favorite: boolean, following: boolean) => Response.json({ data: { follow: { concurso_id: id, is_favorite: favorite, is_following: following } } });
+  const loading = controller.load({ access_token: "test-only" });
+  assert.equal(state.ready, false);
+  await controller.toggle("favorite");
+  assert.equal(calls.length, 1, "must not overwrite flags while loading");
+  calls[0].resolve(response(false, true)); await loading;
+  assert.equal(state.ready, true);
+  const saving = controller.toggle("favorite");
+  assert.deepEqual(JSON.parse(String(calls[1].init?.body)), { concursoId: id, favorite: true, following: true }, "favorite must preserve existing following");
+  await controller.toggle("following");
+  assert.equal(calls.length, 2, "simultaneous clicks must not create competing writes");
+  calls[1].reject(new Error("network")); await saving;
+  assert.equal(state.saving, false); assert.equal(state.ready, false); assert.ok(state.error);
+  await controller.toggle("favorite"); assert.equal(calls.length, 2, "uncertain write must reload first");
+  const retry = controller.retry(); calls[2].resolve(response(true, true)); await retry;
+  assert.equal(state.favorite, true); assert.equal(state.following, true); assert.equal(state.error, "");
+  const oldLoad = controller.load({ access_token: "old-session" });
+  await controller.load(null);
+  calls[3].resolve(response(true, true)); await oldLoad;
+  assert.equal(state.favorite, false); assert.equal(state.following, false);
+  assert.equal(await controller.toggle("favorite"), "login");
+  const newLoad = controller.load({ access_token: "new-session" });
+  calls[4].resolve(Response.json({ data: { follow: { concurso_id: "wrong", is_favorite: true, is_following: true } } })); await newLoad;
+  assert.equal(state.ready, false, "invalid response must fail closed");
+  const disposedLoad = controller.retry(); controller.dispose();
+  const lastState = state;
+  calls[5].resolve(response(true, true)); await disposedLoad;
+  assert.equal(state, lastState, "unmounted controller cannot publish stale state");
+  console.log("Sprint 2.5 follow controller: load race, preserved flags, serialization, network recovery, auth and unmount passed");
+}
+main().catch((error) => { console.error(error); process.exitCode = 1; });

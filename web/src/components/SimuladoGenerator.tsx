@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { resolveContestPreselection } from "@/lib/simulados/contest-preselection";
 
 type ContestOption = { id: string; titulo: string; orgao: string; banca: string | null; questionCount: number };
 type Options = { concursos: ContestOption[]; cargos: string[]; disciplinas: string[]; assuntos: string[]; bancas: string[]; niveis: string[] };
@@ -24,7 +25,7 @@ function browserSessionId() {
   return created;
 }
 
-export function SimuladoGenerator() {
+export function SimuladoGenerator({ requestedContestId }: { requestedContestId?: string } = {}) {
   const [options, setOptions] = useState<Options | null>(null);
   const [form, setForm] = useState({ concursoId: "", mode: "RAPIDO", quantidade: "3", cargo: "", disciplina: "", assunto: "", banca: "", nivel: "", dificuldade: "", seed: "" });
   const [attempt, setAttempt] = useState<Attempt | null>(null);
@@ -33,13 +34,30 @@ export function SimuladoGenerator() {
   const [elapsed, setElapsed] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [selectionMessage, setSelectionMessage] = useState("");
+  const [loadAttempt, setLoadAttempt] = useState(0);
 
   useEffect(() => {
-    fetch("/api/simulados/generate", { cache: "no-store" }).then(async (response) => {
-      if (!response.ok) throw new Error();
-      return response.json();
-    }).then((payload) => setOptions(payload.data)).catch(() => setError("Não foi possível carregar as opções agora."));
-  }, []);
+    const controller = new AbortController();
+    async function load() {
+      try {
+        const response = await fetch("/api/simulados/generate", { cache: "no-store", signal: controller.signal });
+        if (!response.ok) throw new Error("OPTIONS_FAILED");
+        const payload = await response.json();
+        const options = payload.data as Options;
+        const selected = await resolveContestPreselection(requestedContestId, options.concursos, fetch, controller.signal);
+        if (controller.signal.aborted) return;
+        setOptions(options);
+        setForm((current) => ({ ...current, concursoId: selected.concursoId }));
+        setSelectionMessage(selected.message);
+        setError("");
+      } catch {
+        if (!controller.signal.aborted) setError("Não foi possível carregar as opções ou validar o concurso agora.");
+      }
+    }
+    void load();
+    return () => controller.abort();
+  }, [requestedContestId, loadAttempt]);
 
   useEffect(() => {
     if (!attempt || result) return;
@@ -48,7 +66,7 @@ export function SimuladoGenerator() {
   }, [attempt, result]);
 
   const selectedContest = useMemo(() => options?.concursos.find((contest) => contest.id === form.concursoId), [form.concursoId, options]);
-  const canGenerate = Boolean(form.concursoId && (!selectedContest || Number(form.quantidade) <= selectedContest.questionCount) &&
+  const canGenerate = Boolean(selectedContest && Number(form.quantidade) >= 1 && Number(form.quantidade) <= selectedContest.questionCount &&
     (form.mode !== "POR_MATERIA" || form.disciplina) && (form.mode !== "POR_ASSUNTO" || form.assunto));
 
   async function generate() {
@@ -148,6 +166,8 @@ export function SimuladoGenerator() {
         <p className="text-xs font-black tracking-[0.2em] text-cyan-300">NOVO · MOTOR REAL</p>
         <h2 className="mt-2 font-display text-3xl font-bold">Monte seu simulado</h2>
         <p className="mt-2 text-sm text-white/65">Escolha o concurso e personalize o treino. A nota é calculada com segurança no servidor.</p>
+        {selectionMessage && <p role="status" className="mt-4 text-sm text-cyan-200">{selectionMessage}</p>}
+        {!options && error && <button onClick={() => setLoadAttempt((value) => value + 1)} className="mt-4 underline">Tentar carregar novamente</button>}
         {!options ? <p className="mt-6 text-sm text-white/60">Carregando banco de questões…</p> : <div className="mt-6 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           <label className="text-sm">Concurso *<select value={form.concursoId} onChange={(event) => setForm((current) => ({ ...current, concursoId: event.target.value, banca: "", cargo: "" }))} className="mt-1 w-full rounded-xl bg-white p-3 text-zinc-900"><option value="">Selecione</option>{options.concursos.map((contest) => <option key={contest.id} value={contest.id}>{contest.orgao} · {contest.titulo} ({contest.questionCount})</option>)}</select></label>
           <label className="text-sm">Modo<select value={form.mode} onChange={(event) => setForm((current) => ({ ...current, mode: event.target.value }))} className="mt-1 w-full rounded-xl bg-white p-3 text-zinc-900">{modes.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>

@@ -1,6 +1,7 @@
 import { cache } from "react";
 import { resolveRequestedContest } from "@/lib/collector/canonicalContest";
 import { supabaseService } from "@/lib/supabase-server";
+import { filterCurrentContestEvidence, isContestId, isPublicSourceUrl } from "@/lib/contest-evidence";
 
 export type ContestEvidence = { field_name: string; value_json: unknown; source_url: string; source_name: string | null; source_tier: number; evidence_text: string; confidence: number; observed_at: string };
 export type ContestDocument = { document_type: string | null; relationship_type: string; source_url: string; source_name: string | null; published_at: string | null; observed_at: string; is_current: boolean };
@@ -15,6 +16,7 @@ export type ContestPageData = {
 };
 
 export const getContestPageData = cache(async (requestedId: string): Promise<ContestPageData | null> => {
+  if (!isContestId(requestedId)) return null;
   const svc = supabaseService();
   const resolved = await resolveRequestedContest(svc, requestedId);
   if (!resolved) return null;
@@ -22,17 +24,19 @@ export const getContestPageData = cache(async (requestedId: string): Promise<Con
   if (contestResult.error) throw new Error("CONTEST_PAGE_QUERY_FAILED");
   if (!contestResult.data?.is_publishable) return null;
   const [evidenceResult, documentsResult] = await Promise.all([
-    svc.from("concurso_field_evidence").select("field_name,value_json,source_url,source_name,source_tier,evidence_text,confidence,observed_at").eq("concurso_id", resolved.canonicalId).order("observed_at", { ascending: false }).limit(100),
+    svc.from("concurso_field_evidence").select("field_name,value_json,source_url,source_name,source_tier,evidence_text,confidence,observed_at").eq("concurso_id", resolved.canonicalId).is("invalidation_reason", null).order("observed_at", { ascending: false }).limit(100),
     svc.from("concurso_documents").select("document_type,relationship_type,source_url,source_name,published_at,observed_at,is_current").eq("concurso_id", resolved.canonicalId).order("observed_at", { ascending: false }).limit(100),
   ]);
   if (evidenceResult.error || documentsResult.error) throw new Error("CONTEST_PAGE_PROVENANCE_QUERY_FAILED");
   const { simulados, is_publishable: _isPublishable, ...contest } = contestResult.data;
   void _isPublishable;
+  const documents = ((documentsResult.data || []) as ContestDocument[]).filter((document) => isPublicSourceUrl(document.source_url));
+  const currentEvidence = filterCurrentContestEvidence(contest as Record<string, unknown>, (evidenceResult.data || []) as ContestEvidence[], documents) as ContestEvidence[];
   return {
     ...contest, id: resolved.canonicalId, requested_id: requestedId,
     cargos: Array.isArray(contest.cargos) ? contest.cargos.map(String) : [],
     escolaridade: Array.isArray(contest.escolaridade) ? contest.escolaridade.map(String) : [],
     simulado_slug: Array.isArray(simulados) ? simulados[0]?.slug || null : null,
-    evidence: (evidenceResult.data || []) as ContestEvidence[], documents: (documentsResult.data || []) as ContestDocument[],
+    evidence: currentEvidence, documents,
   } as ContestPageData;
 });

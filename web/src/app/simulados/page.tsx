@@ -3,7 +3,9 @@ import { simulados } from "@/lib/mock";
 import { Header, Footer } from "@/components/Header";
 import { SimuladoGenerator } from "@/components/SimuladoGenerator";
 
-export default function SimuladosPage() {
+export default async function SimuladosPage({ searchParams }: { searchParams: Promise<{ concursoId?: string | string[] }> }) {
+  const requested = (await searchParams).concursoId;
+  const requestedContestId = Array.isArray(requested) ? "" : requested;
   return (
     <div className="mesh min-h-screen">
       <Header />
@@ -22,7 +24,7 @@ export default function SimuladosPage() {
           </div>
           <Link href="/quiz" className="rounded-full bg-white text-black px-6 py-3 font-bold">Descobrir meu concurso →</Link>
         </div>
-        <SimuladoGenerator />
+        <SimuladoGenerator key={requestedContestId ?? "default"} requestedContestId={requestedContestId} />
 
         <div className="mt-8 grid md:grid-cols-2 lg:grid-cols-3 gap-4">
           {simulados.map((s) => (
