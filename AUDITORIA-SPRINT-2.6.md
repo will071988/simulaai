@@ -17,7 +17,9 @@ Painel privado para saúde do coletor, fontes, fila de IA, documentos falhos, co
 
 ## Banco
 
-Migração aditiva `20261004203913_admin_operations.sql` aplicada ao projeto Supabase autorizado `ukwulespvvthyjqgrjfo` após dry-run mostrar apenas ela. Não contém DROP, TRUNCATE, DELETE, reset ou reparo de histórico. Verificação remota: 0 administradores, 0 ações, 32 documentos, 13 candidatos, 23 concursos; RLS ativo nas novas tabelas; `anon`/`authenticated` sem EXECUTE na função, `service_role` com EXECUTE. A análise de segurança aponta três avisos informativos esperados de RLS sem política nas novas tabelas privadas e nenhum novo alerta de função privilegiada pública; demais alertas preexistem e não pertencem a esta migração.
+Migração aditiva `20261004203913_admin_operations.sql` aplicada ao projeto Supabase autorizado `ukwulespvvthyjqgrjfo` após dry-run mostrar apenas ela. Não contém DROP, TRUNCATE, DELETE, reset ou reparo de histórico. Verificação remota logo após a migração: 0 administradores, 0 ações, 32 documentos, 13 candidatos, 23 concursos; RLS ativo nas novas tabelas; `anon`/`authenticated` sem EXECUTE na função, `service_role` com EXECUTE. A análise de segurança aponta três avisos informativos esperados de RLS sem política nas novas tabelas privadas e nenhum novo alerta de função privilegiada pública; demais alertas preexistem e não pertencem a esta migração.
+
+Após indicação explícita do proprietário, `williamrocha6@gmail.com` foi confirmado no Auth como usuário permanente, ativo e com e-mail verificado. O vínculo `ADMIN` foi inserido somente para o respectivo `auth.users.id`, com predicados de ID e e-mail exatos, e `ON CONFLICT DO NOTHING`. Consulta independente posterior mostrou `total_admins = 1` e `exact_verified_admins = 1`. Nenhuma outra conta recebeu acesso.
 
 ## Testes
 
@@ -35,9 +37,10 @@ Implementação em `aa31f7eaadaff67947b5544fbb124aebd44fb447`, enviada a `origin
 
 No alias de produção, `/admin/operacoes` responde 200 com `noindex`; `/api/admin/operations` responde 401 tanto a GET quanto a POST sem token. Chrome exibiu apenas o convite para entrar, sem métricas ou dados operacionais. A página pública não comprova o caminho autenticado, ainda pendente.
 
+Depois da atribuição inicial, a aba do Chrome continuou sem sessão do SimulaAí e exibiu somente o convite para entrar; não houve tentativa de login automatizada nem captura de senha/token.
+
 ## Pendências de fechamento
 
-- Conta de administrador indicada e papel concedido explicitamente; nenhum acesso por inferência de e-mail.
 - Smoke de produção autenticado, incluindo leitura e ação com conta admin autorizada.
 - Confirmar comportamento de aprovação de fontes no fluxo operacional real sem ativar adaptador não suportado.
 
