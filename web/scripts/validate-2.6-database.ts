@@ -8,6 +8,7 @@ async function main() {
   try {
     const before = await db.query<{ count: number }>("select count(*)::int count from collector_documents");
     await db.exec(readFileSync("../supabase/migrations/20261004203913_admin_operations.sql", "utf8"));
+    await db.exec(readFileSync("../supabase/migrations/20261005120000_restrict_admin_document_retry.sql", "utf8"));
     const after = await db.query<{ count: number }>("select count(*)::int count from collector_documents");
     assert.equal(after.rows[0].count, before.rows[0].count, "migration may not modify existing documents");
     assert.equal((await db.query<{ count: number }>("select count(*)::int count from ops_admin_members")).rows[0].count, 0, "no implicit admin");
@@ -16,10 +17,13 @@ async function main() {
     const actor = (await db.query<{ id: string }>("insert into auth.users(email) values('operator@fixture.test') returning id")).rows[0].id;
     const outsider = (await db.query<{ id: string }>("insert into auth.users(email) values('outsider@fixture.test') returning id")).rows[0].id;
     const source = (await db.query<{ id: string }>("select id from collector_sources limit 1")).rows[0].id;
-    const doc = (await db.query<{ id: string }>("insert into collector_documents(source_id,canonical_url,source_url,title,content_hash,status,raw_text) values($1,'https://official.test/retry','https://official.test/retry','Retry','ops-retry','FAILED','document body') returning id", [source])).rows[0].id;
+    const doc = (await db.query<{ id: string }>("insert into collector_documents(source_id,canonical_url,source_url,title,content_hash,status,raw_text,ai_last_error_code) values($1,'https://official.test/retry','https://official.test/retry','Retry','ops-retry','FAILED','document body','TIMEOUT') returning id", [source])).rows[0].id;
+    const permanent = (await db.query<{ id: string }>("insert into collector_documents(source_id,canonical_url,source_url,title,content_hash,status,raw_text,ai_last_error_code,metadata) values($1,'https://official.test/permanent','https://official.test/permanent','Contacts','ops-permanent','FAILED','document body','MAX_RETRIES','{\"sync_error\":\"INSUFFICIENT_IDENTITY\"}') returning id", [source])).rows[0].id;
     await assert.rejects(db.query("select ops_apply_action($1,'RETRY_DOCUMENT',$2)", [outsider, doc]), /OPS_FORBIDDEN/);
     assert.equal((await db.query<{ status: string }>("select status from collector_documents where id=$1", [doc])).rows[0].status, "FAILED");
     await db.query("insert into ops_admin_members(user_id) values($1)", [actor]);
+    await assert.rejects(db.query("select ops_apply_action($1,'RETRY_DOCUMENT',$2)", [actor, permanent]), /OPS_TARGET_NOT_ACTIONABLE/);
+    assert.equal((await db.query<{ status: string }>("select status from collector_documents where id=$1", [permanent])).rows[0].status, "FAILED");
     await db.query("select ops_apply_action($1,'RETRY_DOCUMENT',$2)", [actor, doc]);
     assert.equal((await db.query<{ status: string; ai_retry_count: number }>("select status,ai_retry_count from collector_documents where id=$1", [doc])).rows[0].status, "AI_PENDING");
     await assert.rejects(db.query("select ops_apply_action($1,'RETRY_DOCUMENT',$2)", [actor, doc]), /OPS_TARGET_NOT_ACTIONABLE/);

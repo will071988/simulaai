@@ -281,9 +281,10 @@ export async function runCollector(externalRunId?: string): Promise<{ runId: str
             } catch (error) {
               metrics.errors_count++;
               const errorCode = error instanceof Error ? error.message : "ERR";
-              metrics.ai_pending++;
+              const insufficientIdentity = errorCode === "INSUFFICIENT_IDENTITY";
+              if (!insufficientIdentity) metrics.ai_pending++;
               recordStage(stageResult("resolve", resolveStarted, { status: "FAILED", source: doc.sourceName, documentId: persistedDocumentId, errorCode }));
-              const { error: pendingError } = await svc.from("collector_documents").update({ status: "AI_PENDING", metadata: { ...metadata, sync_error: errorCode }, ai_next_attempt_at: new Date(Date.now() + 15 * 60 * 1000).toISOString(), ai_last_error_code: "SYNC_FAILED" }).eq("id", persistedDocumentId).eq("content_hash", contentHash);
+              const { error: pendingError } = await svc.from("collector_documents").update({ status: insufficientIdentity ? "FAILED" : "AI_PENDING", metadata: { ...metadata, sync_error: errorCode }, ai_next_attempt_at: insufficientIdentity ? null : new Date(Date.now() + 15 * 60 * 1000).toISOString(), ai_last_error_code: insufficientIdentity ? errorCode : "SYNC_FAILED" }).eq("id", persistedDocumentId).eq("content_hash", contentHash);
               if (pendingError) throw new Error(`persist sync retry: ${pendingError.message}`);
             }
           }

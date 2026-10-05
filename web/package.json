@@ -36,6 +36,8 @@
     "test:2.4": "tsx scripts/validate-2.4.ts && tsx scripts/validate-2.4-database.ts",
     "test:2.5": "tsx scripts/validate-2.5.ts && tsx scripts/validate-2.5-actions.ts && tsx scripts/validate-2.5-preselection.ts && tsx scripts/validate-2.5-database.ts",
     "test:2.6": "tsx scripts/validate-2.6.ts && tsx scripts/validate-2.6-database.ts",
+    "smoke:2.6:auth": "tsx scripts/smoke-admin-2.6.ts",
+    "smoke:2.6:ui": "tsx scripts/smoke-admin-ui-2.6.ts",
     "test:ai-budget": "tsx scripts/validate-ai-budget.ts",
     "test:publication-policy": "tsx scripts/validate-publication-policy.ts",
     "test:collector-observability": "tsx scripts/validate-collector-observability.ts",
@@ -64,6 +66,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.3.8",
+    "playwright-core": "^1.63.0",
     "tailwindcss": "^4",
     "tsx": "^4.23.15",
     "typescript": "^5"

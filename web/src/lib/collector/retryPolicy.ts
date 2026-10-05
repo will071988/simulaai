@@ -1,6 +1,7 @@
 export type RetryDecision = { nextStatus: "AI_PENDING" | "FAILED"; incrementRetry: boolean; delaySeconds: number };
 
 export function getAIRetryDecision(errorCode: string, retryCount: number, now = new Date()): RetryDecision {
+  if (errorCode === "INSUFFICIENT_IDENTITY") return { nextStatus: "FAILED", incrementRetry: true, delaySeconds: 0 };
   if (errorCode === "INVALID_SCHEMA") {
     return retryCount + 1 >= 3
       ? { nextStatus: "FAILED", incrementRetry: true, delaySeconds: 0 }

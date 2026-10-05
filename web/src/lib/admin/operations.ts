@@ -10,6 +10,18 @@ export const OperationActionSchema = z.object({
 
 export type OperationAction = z.infer<typeof OperationActionSchema>;
 
+const RETRYABLE_DOCUMENT_ERRORS = new Set([
+  "429", "AI_PENDING", "BUDGET_EXCEEDED", "CONCURRENCY_RETRY", "INVALID_JSON",
+  "INVALID_SCHEMA", "MAX_RETRIES", "PAID_MODEL_BLOCKED", "PROVIDER_DOWN", "RATE_LIMIT", "TIMEOUT",
+]);
+
+export function canRetryFailedDocument(document: { status: string; ai_last_error_code: string | null; metadata?: unknown }) {
+  const metadata = document.metadata && typeof document.metadata === "object" ? document.metadata as Record<string, unknown> : {};
+  return document.status === "FAILED"
+    && RETRYABLE_DOCUMENT_ERRORS.has(document.ai_last_error_code || "")
+    && metadata.sync_error !== "INSUFFICIENT_IDENTITY";
+}
+
 export function validateOperationAction(input: unknown): OperationAction | null {
   const parsed = OperationActionSchema.safeParse(input);
   if (!parsed.success) return null;

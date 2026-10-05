@@ -8,6 +8,7 @@ import { ExtractConcursoSchema } from "../src/lib/collector/schemas";
 import { isModelAllowed } from "../src/lib/ai/config";
 import { parseOpenRouterJson } from "../src/lib/ai/openrouter";
 import { hashContent, stableHtmlText } from "../src/lib/collector/http";
+import { getAIRetryDecision } from "../src/lib/collector/retryPolicy";
 
 assert.equal(enrichDocument("Publicação", "Publicado em 01/02/2026").prova_data, null);
 assert.deepEqual(enrichDocument("Concurso", "melhorar o funcionamento técnico das páginas").escolaridade, []);
@@ -20,4 +21,5 @@ assert.equal(isModelAllowed("provider/model-paid"), false);
 assert.deepEqual(parseOpenRouterJson<{ ok: boolean }>('```json\n{"ok":true}\n```'), { ok: true });
 assert.throws(() => parseOpenRouterJson('[{"ok":true}]'));
 assert.equal(hashContent(stableHtmlText('<html><script nonce="one">x</script><main>Edital 01</main></html>')), hashContent(stableHtmlText('<html><script nonce="two">y</script><main>Edital 01</main></html>')));
+assert.deepEqual(getAIRetryDecision("INSUFFICIENT_IDENTITY", 0), { nextStatus: "FAILED", incrementRetry: true, delaySeconds: 0 });
 console.log("1.5 offline validation passed");

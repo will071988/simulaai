@@ -71,7 +71,7 @@ async function handlePending() {
           } catch (e) { return e instanceof Error ? e.message : "ERR"; }
         })();
         if (syncErr) {
-          await scheduleRetry(d, { ...meta, ai_extracted: parsed.data, ai_provider: res?.provider || meta.ai_provider || "deterministic", sync_error: syncErr }, syncErr.endsWith("_RETRY") || syncErr === "DOCUMENT_VERSION_CHANGED" || syncErr === "DOCUMENT_CLAIM_CHANGED" ? "CONCURRENCY_RETRY" : "SYNC_FAILED");
+          await scheduleRetry(d, { ...meta, ai_extracted: parsed.data, ai_provider: res?.provider || meta.ai_provider || "deterministic", sync_error: syncErr }, syncErr === "INSUFFICIENT_IDENTITY" ? syncErr : syncErr.endsWith("_RETRY") || syncErr === "DOCUMENT_VERSION_CHANGED" || syncErr === "DOCUMENT_CLAIM_CHANGED" ? "CONCURRENCY_RETRY" : "SYNC_FAILED");
           continue;
         }
         processed++;
