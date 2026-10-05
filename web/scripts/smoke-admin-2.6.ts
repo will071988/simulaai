@@ -14,6 +14,14 @@ type OperationsPayload = {
     aiPending: { id: string }[];
     counts: { aiPending: number; failedDocuments: number };
     recentActions: { action: string; target_id: string }[];
+    observability: {
+      api: { requests: number; errors: number; averageLatencyMs: number; maxLatencyMs: number; p95UpperMs: number | null };
+      databaseErrors24h: number;
+      runtimeEvents24h: number;
+      jobs: { status: string }[];
+      backlog: { total: number; due: number; oldestDueAt: string | null };
+      alerts: { status: string }[];
+    };
   };
 };
 
@@ -50,6 +58,11 @@ async function main() {
   assert.equal(before.payload.ok, true, "operations response was not successful");
   assert.ok(before.payload.data.failedDocuments.every((document) => typeof document.retryable === "boolean"), "failed documents must disclose retry eligibility");
   assert.ok(before.payload.data.failedDocuments.some((document) => !document.retryable), "a permanent failure must not be retryable");
+  assert.ok(before.payload.data.observability.api.requests >= 1, "production API metrics were not persisted");
+  assert.equal(typeof before.payload.data.observability.runtimeEvents24h, "number");
+  assert.ok(Array.isArray(before.payload.data.observability.jobs));
+  assert.equal(before.payload.data.observability.backlog.total, before.payload.data.counts.aiPending);
+  assert.ok(Array.isArray(before.payload.data.observability.alerts));
 
   let retried = false;
   let targetId: string | null = null;
@@ -75,6 +88,7 @@ async function main() {
     cacheControl: "private, no-store",
     countsBefore: before.payload.data.counts,
     permanentRetriesBlocked: before.payload.data.failedDocuments.filter((document) => !document.retryable).length,
+    observability: before.payload.data.observability,
     controlledRetry: retried,
     targetId,
   }, null, 2));

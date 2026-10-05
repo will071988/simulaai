@@ -1,6 +1,6 @@
 # Sprint 2.7 - Observabilidade e Alertas
 
-Data de fechamento: 05/10/2026. **Estado: aguardando CI e production smoke.**
+Data de fechamento: 05/10/2026. **Estado: fechada.**
 
 ## Escopo
 
@@ -36,11 +36,19 @@ O smoke `test:2.7:live` no Supabase real confirmou: leitura anônima negada, mé
 
 ## Commit, CI e deployment
 
-A preencher após push, conclusão do GitHub Actions e deployment Vercel.
+Implementação em `04eb4141d91e31bb217fe05b701d13e4958efce2` (`feat: add operational observability and alerts`), enviada a `origin/main` sem reescrita de histórico. GitHub Actions `37323163196`: sucesso nas 37 etapas, incluindo todas as suítes 1.3.1-2.7, lint, TypeScript, audit e build.
+
+Deployment Vercel `dpl_HguFVscjJJFAGUQMW2ZW1zzHBfY3`: Production Ready, URL imutável `https://simulaai-fyxi8ts7o-williamrocha6-5180s-projects.vercel.app` e alias `https://simulaai-kappa.vercel.app`.
 
 ## Production smoke
 
-A preencher após o deployment da aplicação.
+- `/api/health` respondeu 200, `Cache-Control: no-store` e somente `{"ok":true,"status":"degraded"}`. O estado degradado é coerente com duas fontes saudáveis, uma degradada, zero fontes falhas e backlog zero.
+- `/api/collector` respondeu 200 e confirmou a última execução `SUCCESS`, três fontes verificadas, zero erros, zero parse failures e zero `AI_PENDING`.
+- `/api/admin/operations` respondeu 401 sem token e 200 para a conta admin autorizada, com `private, no-store`.
+- A resposta privada reportou 8 requisições observadas em 24h, zero 5xx, zero erros de banco/runtime, backlog zero, um job de validação `SKIPPED`, uma chamada gratuita de IA bem-sucedida e zero alertas ativos.
+- Chrome headless real renderizou “API em 24h”, “Backlog devido”, “Jobs e crons”, “Alertas operacionais” e “Erros de runtime/banco”, além das seções preexistentes, sem tela de login ou erro de autorização.
+- HEAD e GET no health preservaram headers de segurança e produziram telemetria. O canonical production smoke permaneceu verde.
+- Nenhuma ação administrativa mutável foi executada; os 18 documentos permanentemente falhos continuam com retry bloqueado.
 
 ## Riscos residuais
 
@@ -50,4 +58,4 @@ A preencher após o deployment da aplicação.
 
 ## Estado final
 
-Banco e implementação validados. O fechamento depende de commit, CI, deployment e production smoke.
+Migration, métricas, jobs, alertas, health, painel privado, CI, deployment e smokes público/autenticado validados. **SPRINT 2.7 FECHADA.**
