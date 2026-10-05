@@ -2,13 +2,14 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { supabaseService } from "@/lib/supabase-server";
 import { hashAttemptToken, isAttemptToken } from "@/lib/simulados/security";
+import { observeApiRoute } from "@/lib/observability/operations";
 
 const CompleteSchema = z.object({
   token: z.string(),
   answers: z.record(z.string().uuid(), z.string().trim().min(1).max(5)).refine((value) => Object.keys(value).length <= 100),
 });
 
-export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
+async function handlePOST(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await context.params;
     if (!z.string().uuid().safeParse(id).success) return NextResponse.json({ error: "INVALID_ATTEMPT_ID" }, { status: 400 });
@@ -25,3 +26,5 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     return NextResponse.json({ error: "ATTEMPT_COMPLETE_FAILED" }, { status: 500 });
   }
 }
+
+export const POST = observeApiRoute("/api/simulados/attempts/[id]/complete", handlePOST);

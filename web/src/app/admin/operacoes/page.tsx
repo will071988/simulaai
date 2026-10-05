@@ -22,6 +22,15 @@ type Operations = {
   aiFailureCount7d: number;
   conflictReviews: { concurso_id: string; review_note: string; reviewed_at: string }[];
   recentActions: ActionLog[];
+  observability: {
+    api: { requests: number; errors: number; errorRate: number; averageLatencyMs: number; maxLatencyMs: number; p95UpperMs: number | null };
+    databaseErrors24h: number; runtimeEvents24h: number;
+    recentEvents: { id: number; event_kind: string; component: string; error_code: string; created_at: string }[];
+    jobs: { id: string; job_name: string; trigger_type: string; status: string; started_at: string; duration_ms: number | null; error_code: string | null }[];
+    backlog: { total: number; due: number; oldestDueAt: string | null };
+    ai24h: { calls: number; success: number; errors: number; averageLatencyMs: number };
+    alerts: { fingerprint: string; rule_name: string; severity: string; status: string; last_seen_at: string; occurrence_count: number }[];
+  };
 };
 
 const date = (value?: string | null) => value ? new Date(value).toLocaleString("pt-BR") : "—";
@@ -102,6 +111,9 @@ export default function OperationsPage() {
         <section className={box}><h2 className="font-bold">Saúde do coletor</h2><p className="mt-2 text-2xl">{data.runs[0]?.status || "Sem execução"}</p><p className="text-sm text-white/60">Última execução: {date(data.runs[0]?.started_at)}</p></section>
         <section className={box}><h2 className="font-bold">Fila de IA</h2><p className="mt-2 text-2xl">{data.counts.aiPending}</p><p className="text-sm text-white/60">Documentos pendentes (até 50 exibidos)</p></section>
         <section className={box}><h2 className="font-bold">Orçamento de IA</h2><p className="mt-2 text-2xl">{data.aiBudget.reserved} / {data.aiBudget.limit}</p><p className="text-sm text-white/60">Reservas em {data.aiBudget.day}; {data.aiFailureCount7d} falhas de IA em 7 dias</p></section>
+        <section className={box}><h2 className="font-bold">API em 24h</h2><p className="mt-2 text-2xl">{data.observability.api.requests} requests</p><p className="text-sm text-white/60">{(data.observability.api.errorRate * 100).toFixed(1)}% 5xx · média {data.observability.api.averageLatencyMs} ms · p95 ≤ {data.observability.api.p95UpperMs ?? ">3000"} ms</p></section>
+        <section className={box}><h2 className="font-bold">Backlog devido</h2><p className="mt-2 text-2xl">{data.observability.backlog.due} / {data.observability.backlog.total}</p><p className="text-sm text-white/60">Mais antigo: {date(data.observability.backlog.oldestDueAt)}</p></section>
+        <section className={box}><h2 className="font-bold">IA em 24h</h2><p className="mt-2 text-2xl">{data.observability.ai24h.success} / {data.observability.ai24h.calls}</p><p className="text-sm text-white/60">{data.observability.ai24h.errors} erros · média {data.observability.ai24h.averageLatencyMs} ms</p></section>
       </div>
       <div className="grid gap-6 lg:grid-cols-2">
         <section className={box}><h2 className="text-xl font-bold">IA pendente ({data.counts.aiPending})</h2><p className="text-sm text-white/60">Até 50 documentos mais recentes; o processamento é feito pela fila, sem disparo manual arbitrário.</p><div className="mt-3 max-h-80 space-y-2 overflow-auto">{data.aiPending.map((doc) => <article key={doc.id} className="rounded-xl bg-white/5 p-3"><b>{doc.title || "Documento sem título"}</b><p className="break-all text-xs text-white/60">{doc.source_url}</p><p className="text-xs">Próxima tentativa: {date(doc.ai_next_attempt_at)} · {doc.ai_last_error_code || "sem erro registrado"}</p></article>)}{!data.aiPending.length && <p className="text-white/60">Nenhum documento aguardando IA.</p>}</div></section>
@@ -115,6 +127,9 @@ export default function OperationsPage() {
         <section className={box}><h2 className="text-xl font-bold">Falhas recentes de IA ({data.aiFailureCount7d} em 7 dias)</h2><p className="text-sm text-white/60">Até 30 falhas mais recentes.</p><div className="mt-3 max-h-48 space-y-2 overflow-auto">{data.aiFailures.map((item) => <p key={item.id} className="rounded-xl bg-red-500/10 p-2 text-sm">{date(item.created_at)} · {item.provider || "Provedor não informado"} · {item.error_code || "sem código"}</p>)}{!data.aiFailures.length && <p className="text-sm text-white/60">Nenhuma falha em sete dias.</p>}</div></section>
         <section className={box}><h2 className="text-xl font-bold">Execuções recentes</h2><div className="mt-3 max-h-80 space-y-2 overflow-auto">{data.runs.map((run) => <p key={run.id} className="rounded-xl bg-white/5 p-2 text-sm">{date(run.started_at)} · {run.status} · {run.sources_failed} fontes falhas · {run.errors_count} erros</p>)}</div></section>
         <section className={box}><h2 className="text-xl font-bold">Ações recentes</h2><div className="mt-3 max-h-80 space-y-2 overflow-auto">{data.recentActions.map((item) => <p key={item.id} className="rounded-xl bg-white/5 p-2 text-sm">{date(item.created_at)} · {item.action} · {item.target_id}</p>)}{!data.recentActions.length && <p className="text-white/60">Nenhuma ação registrada.</p>}</div></section>
+        <section className={box}><h2 className="text-xl font-bold">Jobs e crons</h2><div className="mt-3 max-h-80 space-y-2 overflow-auto">{data.observability.jobs.map((job) => <p key={job.id} className="rounded-xl bg-white/5 p-2 text-sm">{date(job.started_at)} · {job.job_name} · {job.status} · {job.duration_ms ?? 0} ms {job.error_code ? `· ${job.error_code}` : ""}</p>)}{!data.observability.jobs.length && <p className="text-white/60">Nenhum job instrumentado ainda.</p>}</div></section>
+        <section className={box}><h2 className="text-xl font-bold">Alertas operacionais</h2><div className="mt-3 max-h-80 space-y-2 overflow-auto">{data.observability.alerts.filter((alert) => alert.status === "OPEN").map((alert) => <p key={alert.fingerprint} className="rounded-xl bg-amber-500/10 p-2 text-sm"><b>{alert.severity}</b> · {alert.rule_name} · visto {date(alert.last_seen_at)}</p>)}{!data.observability.alerts.some((alert) => alert.status === "OPEN") && <p className="text-white/60">Nenhum alerta operacional aberto.</p>}</div></section>
+        <section className={box}><h2 className="text-xl font-bold">Erros de runtime/banco</h2><p className="text-sm text-white/60">{data.observability.runtimeEvents24h} eventos em 24h; {data.observability.databaseErrors24h} erros de banco entre os 30 mais recentes.</p><div className="mt-3 max-h-48 space-y-2 overflow-auto">{data.observability.recentEvents.map((event) => <p key={event.id} className="rounded-xl bg-red-500/10 p-2 text-sm">{date(event.created_at)} · {event.event_kind} · {event.component} · {event.error_code}</p>)}{!data.observability.recentEvents.length && <p className="text-sm text-white/60">Nenhum evento recente.</p>}</div></section>
       </div>
     </div> : null}
     {error && <p role="alert" className="mt-6 rounded-xl bg-red-500/20 p-4 text-red-100">{error}</p>}

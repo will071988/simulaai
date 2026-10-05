@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
 import { supabaseService } from "@/lib/supabase-server";
 import { enforceQuizRateLimit, PublicRequestError, readJsonBody } from "@/lib/api/publicRequest";
+import { observeApiRoute } from "@/lib/observability/operations";
 
 function isValidUUID(v: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
 }
 
-export async function POST(req: Request) {
+async function handlePOST(req: Request) {
   try {
     const { session_id } = await readJsonBody<{ session_id?: string }>(req);
     if (!session_id || typeof session_id !== "string" || !isValidUUID(session_id)) return NextResponse.json({ ok: false, error: "session_id inválido" }, { status: 400 });
@@ -22,3 +23,5 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
+
+export const POST = observeApiRoute("/api/quiz/convert", handlePOST);

@@ -5,6 +5,7 @@ import { toPublicQuestion } from "@/lib/questions/publicQuestion";
 import { GenerateSimuladoSchema, selectQuestions, simuladoTitle, type QuestionCandidate } from "@/lib/simulados/engine";
 import { createAttemptToken, hashAttemptToken } from "@/lib/simulados/security";
 import { authenticatedUser, bearerToken } from "@/lib/auth/server";
+import { observeApiRoute } from "@/lib/observability/operations";
 
 type QuestionRow = {
   id: string; concurso_id: string | null; cargo: string | null; disciplina: string; assunto: string;
@@ -27,7 +28,8 @@ async function loadPublishedQuestions() {
   return { questions, contests: (result.data || []) as ContestRow[] };
 }
 
-export async function GET() {
+async function handleGET(_request: Request) {
+  void _request;
   try {
     const { questions, contests } = await loadPublishedQuestions();
     const contestMap = new Map(contests.map((contest) => [contest.id, contest]));
@@ -44,7 +46,7 @@ export async function GET() {
   }
 }
 
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
   try {
     const presentedToken = bearerToken(request);
     const user = presentedToken ? await authenticatedUser(request) : null;
@@ -93,3 +95,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "SIMULADO_CREATE_FAILED" }, { status: 500 });
   }
 }
+
+export const GET = observeApiRoute("/api/simulados/generate", handleGET);
+export const POST = observeApiRoute("/api/simulados/generate", handlePOST);

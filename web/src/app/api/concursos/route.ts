@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 import { contestSearchInput } from "@/lib/contest-search";
+import { observeApiRoute } from "@/lib/observability/operations";
 
 const clean = (value: string) => value.replace(/[%_,()]/g, " ").replace(/\s+/g, " ").trim();
 type SearchResult = { data: unknown[]; total: number };
 
-export async function GET(request: Request) {
+async function handleGET(request: Request) {
   const parsed = contestSearchInput(request.url);
   if (!parsed.success) return NextResponse.json({ ok: false, error: "INVALID_CONTEST_SEARCH", details: parsed.error.flatten().fieldErrors }, { status: 400 });
   const input = parsed.data;
@@ -21,3 +22,5 @@ export async function GET(request: Request) {
   const payload = result.data as SearchResult | null; const total = Number(payload?.total || 0);
   return NextResponse.json({ ok: true, data: payload?.data || [], meta: { page: input.page, perPage: input.perPage, total, totalPages: Math.ceil(total / input.perPage) } }, { headers: { "cache-control": "public, s-maxage=60, stale-while-revalidate=300" } });
 }
+
+export const GET = observeApiRoute("/api/concursos", handleGET);

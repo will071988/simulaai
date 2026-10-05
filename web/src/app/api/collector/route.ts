@@ -5,6 +5,8 @@ import { isCronAuthorized } from "@/lib/collector/cronAuth";
 import { acquireCollectorLock, releaseCollectorLock } from "@/lib/collector/lock";
 import crypto from "crypto";
 import { deriveCollectorHealth } from "@/lib/collector/health";
+import { refreshOperationalAlerts } from "@/lib/observability/alerts";
+import { boundedNumber, finishOperationalJob, observeApiRoute, startOperationalJob } from "@/lib/observability/operations";
 
 async function executeCollectorWithLock(): Promise<{ runId: string; status: string; stats: unknown }> {
   const runId = crypto.randomUUID();
@@ -18,7 +20,7 @@ async function executeCollectorWithLock(): Promise<{ runId: string; status: stri
   }
 }
 
-export async function GET(req: Request) {
+async function handleGET(req: Request) {
   const url = new URL(req.url);
   const wantRun = url.searchParams.get("run") === "1";
 
@@ -33,39 +35,57 @@ export async function GET(req: Request) {
     const healthy = sources?.filter((s) => s.health_status === "HEALTHY").length ?? 0;
     const degraded = sources?.filter((s) => s.health_status === "DEGRADED").length ?? 0;
     const failed = sources?.filter((s) => s.health_status === "FAILED").length ?? 0;
-    const failureThreshold = Number(process.env.MAX_CONSECUTIVE_SOURCE_FAILURES || 3);
+    const failureThreshold = boundedNumber(process.env.MAX_CONSECUTIVE_SOURCE_FAILURES, 3, 1, 100);
+    const status = deriveCollectorHealth({ lastRun, sourcesHealthy: healthy, sourcesDegraded: degraded, sourcesFailed: failed, sourceFailureThresholdExceeded: Boolean(sources?.some((source) => (source.failure_count || 0) >= failureThreshold)), pendingAI: pendingAI ?? 0, maxPendingAI: boundedNumber(process.env.MAX_PENDING_AI_ALERT, 20, 1, 100000), maxParseFailureRate: boundedNumber(process.env.MAX_PARSE_FAILURE_RATE, 0.25, 0, 1) });
     return NextResponse.json({
       ok: true,
-      status: deriveCollectorHealth({ lastRun, sourcesHealthy: healthy, sourcesDegraded: degraded, sourcesFailed: failed, sourceFailureThresholdExceeded: Boolean(sources?.some((source) => (source.failure_count || 0) >= failureThreshold)), pendingAI: pendingAI ?? 0, maxPendingAI: Number(process.env.MAX_PENDING_AI_ALERT || 20), maxParseFailureRate: Number(process.env.MAX_PARSE_FAILURE_RATE || 0.25) }),
+      status,
       timestamp: new Date().toISOString(),
       lastRun,
       sourcesHealthy: healthy,
       sourcesDegraded: degraded,
       sourcesFailed: failed,
       pendingAI: pendingAI ?? 0,
-    });
+    }, { status: status === "FAILED" ? 503 : 200, headers: { "Cache-Control": "no-store" } });
   }
 
   if (!isCronAuthorized(req)) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
 
+  const job = await startOperationalJob("COLLECTOR", "CRON");
+  if (job?.acquired === false) return NextResponse.json({ ok: false, error: "Collector already RUNNING" }, { status: 409 });
   try {
     const result = await executeCollectorWithLock();
-    return NextResponse.json({ ok: true, ...result });
+    const jobStatus = result.status === "FAILED" ? "FAILED" : result.status === "SUCCESS" ? "SUCCESS" : result.status === "DISABLED" ? "SKIPPED" : "DEGRADED";
+    await finishOperationalJob(job, jobStatus, {}, result.status === "DISABLED" ? "COLLECTOR_DISABLED" : undefined, result.status === "DISABLED" ? undefined : result.runId);
+    await refreshOperationalAlerts();
+    return NextResponse.json({ ok: result.status !== "FAILED", ...result }, { status: result.status === "FAILED" ? 503 : 200 });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "ERR";
-    if (msg === "LOCKED") return NextResponse.json({ ok: false, error: "Collector already RUNNING" }, { status: 409 });
+    if (msg === "LOCKED") { await finishOperationalJob(job, "SKIPPED", {}, "LOCKED"); return NextResponse.json({ ok: false, error: "Collector already RUNNING" }, { status: 409 }); }
+    await finishOperationalJob(job, "FAILED", {}, msg);
+    await refreshOperationalAlerts();
     return NextResponse.json({ ok: false, error: msg }, { status: 500 });
   }
 }
 
-export async function POST(req: Request) {
+async function handlePOST(req: Request) {
   if (!isCronAuthorized(req)) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  const job = await startOperationalJob("COLLECTOR", "MANUAL");
+  if (job?.acquired === false) return NextResponse.json({ ok: false, error: "Collector already RUNNING" }, { status: 409 });
   try {
     const result = await executeCollectorWithLock();
-    return NextResponse.json({ ok: true, ...result });
+    const jobStatus = result.status === "FAILED" ? "FAILED" : result.status === "SUCCESS" ? "SUCCESS" : result.status === "DISABLED" ? "SKIPPED" : "DEGRADED";
+    await finishOperationalJob(job, jobStatus, {}, result.status === "DISABLED" ? "COLLECTOR_DISABLED" : undefined, result.status === "DISABLED" ? undefined : result.runId);
+    await refreshOperationalAlerts();
+    return NextResponse.json({ ok: result.status !== "FAILED", ...result }, { status: result.status === "FAILED" ? 503 : 200 });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "ERR";
-    if (msg === "LOCKED") return NextResponse.json({ ok: false, error: "Collector already RUNNING" }, { status: 409 });
+    if (msg === "LOCKED") { await finishOperationalJob(job, "SKIPPED", {}, "LOCKED"); return NextResponse.json({ ok: false, error: "Collector already RUNNING" }, { status: 409 }); }
+    await finishOperationalJob(job, "FAILED", {}, msg);
+    await refreshOperationalAlerts();
     return NextResponse.json({ ok: false, error: msg }, { status: 500 });
   }
 }
+
+export const GET = observeApiRoute("/api/collector", handleGET);
+export const POST = observeApiRoute("/api/collector", handlePOST);

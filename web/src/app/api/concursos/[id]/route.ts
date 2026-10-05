@@ -3,8 +3,9 @@ import { supabaseService } from "@/lib/supabase-server";
 import { resolveRequestedContest } from "@/lib/collector/canonicalContest";
 import { findSensitivePaths } from "@/lib/api/exposure";
 import { filterCurrentContestEvidence, isContestId } from "@/lib/contest-evidence";
+import { observeApiRoute } from "@/lib/observability/operations";
 
-export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
+async function handleGET(_request: Request, context: { params: Promise<{ id: string }> }) {
   const { id } = await context.params;
   if (!isContestId(id)) return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404, headers: { "Cache-Control": "no-store" } });
   const svc = supabaseService();
@@ -31,3 +32,5 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
   if (findSensitivePaths(detail).length) return NextResponse.json({ ok: false, error: "DETAIL_EXPOSURE_GUARD_FAILED" }, { status: 500, headers: { "Cache-Control": "no-store" } });
   return NextResponse.json({ ok: true, data: detail }, { headers: { "Cache-Control": "no-store" } });
 }
+
+export const GET = observeApiRoute("/api/concursos/[id]", handleGET);

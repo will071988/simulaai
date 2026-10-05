@@ -21,7 +21,7 @@ export function deriveCollectorHealth(input: HealthInput): "HEALTHY" | "DEGRADED
   const parsed = input.lastRun.parsed_success || 0;
   const parseFailed = input.lastRun.parse_failed || 0;
   const parseFailureRate = parsed + parseFailed > 0 ? parseFailed / (parsed + parseFailed) : 0;
-  if (input.lastRun.status === "FAILED" || (totalSources > 0 && sourcesFailed === totalSources) || input.sourceFailureThresholdExceeded) return "FAILED";
+  if (totalSources === 0 || input.lastRun.status === "FAILED" || sourcesFailed === totalSources || input.sourceFailureThresholdExceeded) return "FAILED";
   if (input.lastRun.status === "RUNNING" && now - Date.parse(input.lastRun.started_at || "") > 20 * 60 * 1000) return "FAILED";
   if (stale || input.lastRun.status === "RUNNING" || (input.lastRun.errors_count || 0) > 0 || input.pendingAI > (input.maxPendingAI ?? 20) || sourcesFailed > 0 || input.sourcesDegraded > 0 || input.lastRun.status === "DEGRADED_NO_AI" || parseFailureRate > (input.maxParseFailureRate ?? 0.25)) return "DEGRADED";
   return "HEALTHY";

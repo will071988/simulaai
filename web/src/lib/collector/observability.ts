@@ -45,7 +45,7 @@ export function stageResult(stage: CollectorStage, startedAt: number, details: O
 }
 
 export function deriveCollectorRunStatus(metrics: CollectorMetrics): "SUCCESS" | "DEGRADED_NO_AI" | "FAILED" {
-  if (metrics.sources_checked > 0 && metrics.sources_failed === metrics.sources_checked) return "FAILED";
+  if (metrics.sources_checked === 0 || metrics.sources_failed === metrics.sources_checked) return "FAILED";
   if (metrics.errors_count > 0 || metrics.sources_failed > 0 || metrics.parse_failed > 0 || metrics.ai_pending > 0) return "DEGRADED_NO_AI";
   return "SUCCESS";
 }

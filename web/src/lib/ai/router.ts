@@ -33,15 +33,17 @@ async function getCached<T>(inputHash: string, promptVersion: string): Promise<T
 async function setCached(inputHash: string, promptVersion: string, provider: string, model: string, result: unknown) {
   try {
     const svc = supabaseService();
-    await svc.from("ai_cache").insert({ input_hash: inputHash, prompt_version: promptVersion, provider, model, result });
-  } catch {}
+    const { error } = await svc.from("ai_cache").insert({ input_hash: inputHash, prompt_version: promptVersion, provider, model, result });
+    if (error) console.error(JSON.stringify({ event: "observability_write_failed", component: "ai_cache", code: "INSERT_FAILED" }));
+  } catch { console.error(JSON.stringify({ event: "observability_write_failed", component: "ai_cache", code: "UNAVAILABLE" })); }
 }
 
 async function logUsage(provider: string, model: string, taskType: string, success: boolean, latencyMs: number, errorCode?: string, inputSize?: number, outputSize?: number) {
   try {
     const svc = supabaseService();
-    await svc.from("ai_usage_logs").insert({ provider, model, task_type: taskType, success, latency_ms: latencyMs, error_code: errorCode, input_size: inputSize, output_size: outputSize });
-  } catch {}
+    const { error } = await svc.from("ai_usage_logs").insert({ provider, model, task_type: taskType, success, latency_ms: latencyMs, error_code: errorCode, input_size: inputSize, output_size: outputSize });
+    if (error) console.error(JSON.stringify({ event: "observability_write_failed", component: "ai_usage", code: "INSERT_FAILED" }));
+  } catch { console.error(JSON.stringify({ event: "observability_write_failed", component: "ai_usage", code: "UNAVAILABLE" })); }
 }
 
 async function reserveBudget(): Promise<boolean> {

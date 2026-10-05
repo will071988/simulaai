@@ -2,11 +2,12 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { authenticatedUser } from "@/lib/auth/server";
 import { supabaseService } from "@/lib/supabase-server";
+import { observeApiRoute } from "@/lib/observability/operations";
 
 const FollowSchema = z.object({ concursoId: z.string().uuid(), favorite: z.boolean(), following: z.boolean() }).strict();
 const noStore = { "cache-control": "no-store" };
 
-export async function GET(request: Request) {
+async function handleGET(request: Request) {
   const user = await authenticatedUser(request);
   if (!user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401, headers: noStore });
   const svc = supabaseService();
@@ -26,7 +27,7 @@ export async function GET(request: Request) {
   return NextResponse.json({ data: { follows: follows.data || [], contests: contests.data || [] } }, { headers: noStore });
 }
 
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
   const user = await authenticatedUser(request);
   if (!user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401, headers: noStore });
   const parsed = FollowSchema.safeParse(await request.json());
@@ -43,3 +44,6 @@ export async function POST(request: Request) {
   if (saved.error) return NextResponse.json({ error: "FOLLOW_SAVE_FAILED" }, { status: 500, headers: noStore });
   return NextResponse.json({ data: saved.data }, { headers: noStore });
 }
+
+export const GET = observeApiRoute("/api/follows", handleGET);
+export const POST = observeApiRoute("/api/follows", handlePOST);

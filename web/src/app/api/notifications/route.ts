@@ -2,11 +2,12 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { authenticatedUser } from "@/lib/auth/server";
 import { supabaseService } from "@/lib/supabase-server";
+import { observeApiRoute } from "@/lib/observability/operations";
 
 const ReadSchema = z.object({ eventId: z.string().uuid() }).strict();
 const noStore = { "cache-control": "no-store" };
 
-export async function GET(request: Request) {
+async function handleGET(request: Request) {
   const user = await authenticatedUser(request);
   if (!user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401, headers: noStore });
   const svc = supabaseService();
@@ -17,7 +18,7 @@ export async function GET(request: Request) {
   return NextResponse.json({ data: data || [] }, { headers: noStore });
 }
 
-export async function PATCH(request: Request) {
+async function handlePATCH(request: Request) {
   const user = await authenticatedUser(request);
   if (!user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401, headers: noStore });
   const parsed = ReadSchema.safeParse(await request.json());
@@ -26,3 +27,6 @@ export async function PATCH(request: Request) {
   if (error || !data) return NextResponse.json({ error: "NOTIFICATION_NOT_FOUND" }, { status: 404, headers: noStore });
   return NextResponse.json({ data }, { headers: noStore });
 }
+
+export const GET = observeApiRoute("/api/notifications", handleGET);
+export const PATCH = observeApiRoute("/api/notifications", handlePATCH);

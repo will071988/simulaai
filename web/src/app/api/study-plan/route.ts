@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { authenticatedUser } from "@/lib/auth/server";
 import { supabaseService } from "@/lib/supabase-server";
 import { buildStudyPlan, StudyPlanRequestSchema, type DisciplineSignal } from "@/lib/study-plan/engine";
+import { observeApiRoute } from "@/lib/observability/operations";
 
 type ProgressDiscipline = { discipline: string; answeredCount: number; errorCount: number; accuracy: number };
 type StoredPlan = {
@@ -49,7 +50,7 @@ async function options() {
   };
 }
 
-export async function GET(request: Request) {
+async function handleGET(request: Request) {
   try {
     const user = await authenticatedUser(request);
     if (!user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401, headers: noStore });
@@ -77,7 +78,7 @@ export async function GET(request: Request) {
   }
 }
 
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
   try {
     const user = await authenticatedUser(request);
     if (!user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401, headers: noStore });
@@ -111,3 +112,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "STUDY_PLAN_SAVE_FAILED" }, { status: 500, headers: noStore });
   }
 }
+
+export const GET = observeApiRoute("/api/study-plan", handleGET);
+export const POST = observeApiRoute("/api/study-plan", handlePOST);

@@ -7,17 +7,21 @@ import { syncConcursoFromDocument } from "@/lib/collector/syncConcurso";
 import { getAIRetryDecision } from "@/lib/collector/retryPolicy";
 import { GenerationBudget } from "@/lib/ai/generationBudget";
 import { aiConfig } from "@/lib/ai/config";
+import { refreshOperationalAlerts } from "@/lib/observability/alerts";
+import { finishOperationalJob, observeApiRoute, startOperationalJob } from "@/lib/observability/operations";
 
-export async function GET(req: Request) {
+async function handleGET(req: Request) {
   if (!isCronAuthorized(req)) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  return handlePending();
+  return handlePending("CRON");
 }
-export async function POST(req: Request) {
+async function handlePOST(req: Request) {
   if (!isCronAuthorized(req)) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  return handlePending();
+  return handlePending("MANUAL");
 }
 
-async function handlePending() {
+async function handlePending(triggerType: "CRON" | "MANUAL") {
+  const job = await startOperationalJob("AI_PENDING", triggerType);
+  if (job?.acquired === false) return NextResponse.json({ ok: false, error: "AI pending job already RUNNING" }, { status: 409 });
   try {
     const svc = supabaseService();
     const { data: docs, error } = await svc.rpc("claim_ai_pending_documents", { p_limit: 5 });
@@ -79,9 +83,17 @@ async function handlePending() {
         await scheduleRetry(d, meta, res?.errorCode || "AI_PENDING");
       }
     }
+    const counters = { claimed: (docs || []).length, processed, failed, ai_requests: budget.calls };
+    await finishOperationalJob(job, failed > 0 ? "DEGRADED" : "SUCCESS", counters);
+    await refreshOperationalAlerts();
     return NextResponse.json({ ok: true, processed, failed, pending: (docs || []).length, ai_requests: budget.calls });
-  } catch (error) {
-    console.error("pending persistence failure", error instanceof Error ? error.message : "UNKNOWN");
+  } catch {
+    await finishOperationalJob(job, "FAILED", {}, "PENDING_PERSISTENCE_FAILED");
+    await refreshOperationalAlerts();
+    console.error(JSON.stringify({ event: "job_failed", component: "AI_PENDING", code: "PENDING_PERSISTENCE_FAILED" }));
     return NextResponse.json({ ok: false, error: "PENDING_PERSISTENCE_FAILED" }, { status: 500 });
   }
 }
+
+export const GET = observeApiRoute("/api/collector/pending", handleGET);
+export const POST = observeApiRoute("/api/collector/pending", handlePOST);

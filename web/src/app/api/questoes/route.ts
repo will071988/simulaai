@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { supabaseService } from "@/lib/supabase-server";
 import { toPublicQuestion } from "@/lib/questions/publicQuestion";
+import { observeApiRoute } from "@/lib/observability/operations";
 
 const publicFields = "id,concurso_id,disciplina,assunto,subassunto,enunciado,alternativas,dificuldade,origem,banca,ano,cargo,source_url,source_type,created_at";
 
-export async function GET(request: Request) {
+async function handleGET(request: Request) {
   const params = new URL(request.url).searchParams;
   const limit = Math.max(1, Math.min(Number(params.get("limit") || 20) || 20, 50));
   const disciplina = params.get("disciplina")?.trim().slice(0, 120);
@@ -16,3 +17,5 @@ export async function GET(request: Request) {
   if (error) return NextResponse.json({ error: "QUESTIONS_QUERY_FAILED" }, { status: 500 });
   return NextResponse.json({ data: (data || []).map((row) => toPublicQuestion(row as Record<string, unknown>)) });
 }
+
+export const GET = observeApiRoute("/api/questoes", handleGET);
