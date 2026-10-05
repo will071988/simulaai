@@ -41,9 +41,10 @@ async function main() {
     await page.getByText("Saúde do coletor", { exact: true }).waitFor();
     await page.getByText("Fila de IA", { exact: true }).waitFor();
     await page.getByText("Ações recentes", { exact: true }).waitFor();
+    await page.getByText("Retry indisponível", { exact: true }).first().waitFor();
     const body = await page.locator("body").innerText();
     assert.doesNotMatch(body, /Entre com uma conta administradora|Acesso restrito a administradores/);
-    console.log(JSON.stringify({ ok: true, pageStatus: 200, authenticatedApiStatus: 200, renderedSections: ["Saúde do coletor", "Fila de IA", "Ações recentes"] }, null, 2));
+    console.log(JSON.stringify({ ok: true, pageStatus: 200, authenticatedApiStatus: 200, renderedSections: ["Saúde do coletor", "Fila de IA", "Ações recentes"], permanentRetryDisabled: true }, null, 2));
     await context.close();
   } finally {
     await browser.close();

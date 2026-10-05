@@ -10,7 +10,7 @@ const adminEmail = process.env.OPS_SMOKE_ADMIN_EMAIL || "";
 type OperationsPayload = {
   ok: boolean;
   data: {
-    failedDocuments: { id: string; title: string | null; source_url: string; status: string }[];
+    failedDocuments: { id: string; title: string | null; source_url: string; status: string; retryable: boolean }[];
     aiPending: { id: string }[];
     counts: { aiPending: number; failedDocuments: number };
     recentActions: { action: string; target_id: string }[];
@@ -48,6 +48,8 @@ async function main() {
   assert.equal(before.response.status, 200, "authenticated operations read failed");
   assert.equal(before.response.headers.get("cache-control"), "private, no-store", "private response must not be cached");
   assert.equal(before.payload.ok, true, "operations response was not successful");
+  assert.ok(before.payload.data.failedDocuments.every((document) => typeof document.retryable === "boolean"), "failed documents must disclose retry eligibility");
+  assert.ok(before.payload.data.failedDocuments.some((document) => !document.retryable), "a permanent failure must not be retryable");
 
   let retried = false;
   let targetId: string | null = null;
@@ -72,6 +74,7 @@ async function main() {
     authenticatedRead: true,
     cacheControl: "private, no-store",
     countsBefore: before.payload.data.counts,
+    permanentRetriesBlocked: before.payload.data.failedDocuments.filter((document) => !document.retryable).length,
     controlledRetry: retried,
     targetId,
   }, null, 2));
