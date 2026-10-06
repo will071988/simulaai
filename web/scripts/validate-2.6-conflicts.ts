@@ -21,6 +21,7 @@ async function main() {
   process.env.SUPABASE_SERVICE_ROLE_KEY = "fixture-service-role-not-a-secret";
   let mode: "admin" | "outsider" | "anonymous" | "unconfirmed" | "invalid" = "admin";
   let failingTable = "";
+  let failCount = false;
   const calls: URL[] = [];
   const rows: Record<string, Row[]> = {
     concursos: [{ id: contestId, titulo: "Concurso com vagas divergentes", orgao: "Órgão fixture", quality_status: "CONFLICTED", is_publishable: false, updated_at: at, vagas: 10, private_metadata: "must-not-leak" }, { id: otherId, titulo: "Concurso alheio", quality_status: "VERIFIED", is_publishable: true }],
@@ -39,7 +40,7 @@ async function main() {
     const request = new Request(input, init);
     const url = new URL(request.url);
     assert.equal(url.origin, "https://ops-fixture.supabase.co", "all network calls must remain inside the local fixture");
-    assert.equal(request.method, "GET", "conflict inspection cannot mutate any state");
+    assert.ok(["GET", "HEAD"].includes(request.method), "conflict inspection cannot mutate any state");
     calls.push(url);
     if (url.pathname === "/auth/v1/user") {
       if (mode === "invalid") return Response.json({ message: "invalid test token" }, { status: 401 });
@@ -56,6 +57,7 @@ async function main() {
       if (value.startsWith("in.(")) data = data.filter((row) => value.slice(4, -1).split(",").includes(String(row[key])));
     }
     const total = data.length;
+    if (request.method === "HEAD") return new Response(null, { status: failCount ? 503 : 200, headers: { "Content-Range": `*/${total}` } });
     const order = (url.searchParams.get("order") || "").split(",").filter(Boolean);
     data = [...data].sort((a, b) => {
       for (const item of order) {
@@ -67,6 +69,7 @@ async function main() {
     });
     const offset = Number(url.searchParams.get("offset") || 0);
     const limit = Number(url.searchParams.get("limit") || total);
+    if (offset > 0 && offset >= total) return Response.json({ code: "PGRST103", message: "Requested range not satisfiable" }, { status: 416, headers: { "Content-Range": `*/${total}` } });
     const selected = data.slice(offset, offset + limit).map((row) => Object.fromEntries(columns.map((column) => [column, row[column] ?? null])));
     return Response.json(selected, { headers: { "Content-Range": `${offset}-${Math.max(offset, offset + selected.length - 1)}/${total}` } });
   };
@@ -113,6 +116,19 @@ async function main() {
     assert.deepEqual(second.pagination.evidence, { offset: 2, limit: 2, total: 3, hasMore: false });
     assert.equal(second.documents.length, 1, "paging evidence must not advance another dataset");
     assert.equal(second.fields.find((field) => field.field_name === "vagas")!.current_value, 10);
+
+    response = await get(contestId, "?evidenceOffset=50&documentsOffset=50&changesOffset=50&auditOffset=50");
+    assert.equal(response.status, 200, "pages beyond each collection must remain readable");
+    const beyond = (await response.json()).data as ConflictDetail;
+    assert.ok(beyond.fields.every((field) => field.evidence.length === 0));
+    assert.deepEqual(beyond.documents, []); assert.deepEqual(beyond.acceptedChanges, []); assert.deepEqual(beyond.audit, []);
+    assert.deepEqual(beyond.pagination.evidence, { offset: 50, limit: 50, total: 3, hasMore: false });
+    assert.equal(beyond.pagination.documents.total, 1); assert.equal(beyond.pagination.acceptedChanges.total, 1); assert.equal(beyond.pagination.audit.total, 1);
+    assert.equal(beyond.latestReview?.review_note, first.latestReview?.review_note);
+    failCount = true;
+    response = await get(contestId, "?evidenceOffset=50");
+    assert.equal(response.status, 503, "failed verification count cannot be hidden as empty data");
+    failCount = false;
 
     failingTable = "concurso_field_evidence";
     response = await get(); assert.equal(response.status, 503); assert.doesNotMatch(await response.text(), /sensitive-database-error/);

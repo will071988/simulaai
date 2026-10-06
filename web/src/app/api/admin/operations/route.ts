@@ -6,10 +6,20 @@ import { aiConfig } from "@/lib/ai/config";
 import { refreshOperationalAlerts } from "@/lib/observability/alerts";
 import { observeApiRoute, summarizeApiMetrics, type ApiMetricBucket } from "@/lib/observability/operations";
 import { adapters } from "@/lib/collector/adapters";
+import { readCountedPage } from "@/lib/admin/pagination";
 
 export const dynamic = "force-dynamic";
 const noStore = { "Cache-Control": "private, no-store" };
 const reply = (payload: unknown, status = 200) => NextResponse.json(payload, { status, headers: noStore });
+
+async function readSourcePage(svc: ReturnType<typeof supabaseService>, columns: string, offset: number, history: boolean) {
+  const query = svc.from("source_candidates").select(columns, { count: "exact" });
+  const filtered = history ? query.in("status", ["APPROVED", "REJECTED"]) : query.eq("status", "CANDIDATE");
+  return readCountedPage(filtered.order(history ? "reviewed_at" : "created_at", { ascending: false }).order("id", { ascending: false }).range(offset, offset + 49), offset, () => {
+    const countQuery = svc.from("source_candidates").select("id", { count: "exact", head: true });
+    return history ? countQuery.in("status", ["APPROVED", "REJECTED"]) : countQuery.eq("status", "CANDIDATE");
+  });
+}
 
 async function handleGET(request: Request) {
   try {
@@ -38,8 +48,8 @@ async function handleGET(request: Request) {
       svc.from("collector_documents").select("id,title,source_url,document_type,status,ai_retry_count,ai_last_error_code,collected_at,metadata", { count: "exact" }).eq("status", "FAILED").order("collected_at", { ascending: false }).limit(50),
       svc.from("concursos").select("id,titulo,orgao,quality_status,updated_at", { count: "exact" }).eq("quality_status", "CONFLICTED").order("updated_at", { ascending: false }).limit(50),
       svc.from("concurso_duplicate_candidates").select("id,concurso_a_id,concurso_b_id,score,reason,status,created_at", { count: "exact" }).eq("status", "POSSIBLE_DUPLICATE").order("created_at", { ascending: false }).limit(50),
-      svc.from("source_candidates").select(candidateColumns, { count: "exact" }).eq("status", "CANDIDATE").order("created_at", { ascending: false }).order("id", { ascending: false }).range(offsets.candidateOffset, offsets.candidateOffset + 49),
-      svc.from("source_candidates").select(candidateColumns, { count: "exact" }).in("status", ["APPROVED", "REJECTED"]).order("reviewed_at", { ascending: false }).order("id", { ascending: false }).range(offsets.historyOffset, offsets.historyOffset + 49),
+      readSourcePage(svc, candidateColumns, offsets.candidateOffset, false),
+      readSourcePage(svc, candidateColumns, offsets.historyOffset, true),
       svc.from("ai_daily_budget").select("budget_day,reserved_count").eq("budget_day", today).maybeSingle(),
       svc.from("ai_usage_logs").select("id,provider,model,task_type,error_code,created_at", { count: "exact" }).eq("success", false).gte("created_at", sevenDaysAgo).order("created_at", { ascending: false }).limit(30),
       svc.from("ops_conflict_reviews").select("concurso_id,review_note,reviewed_at").order("reviewed_at", { ascending: false }).limit(50),

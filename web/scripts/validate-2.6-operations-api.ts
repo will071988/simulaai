@@ -11,6 +11,9 @@ async function main() {
   process.env.SUPABASE_SERVICE_ROLE_KEY = "fixture-only-not-a-secret";
   const calls: { url: URL; method: string; body: Record<string, unknown> | null }[] = [];
   let error = "";
+  let paginationError = "";
+  let countError = false;
+  let filteredCount = 13;
   globalThis.fetch = async (input, init) => {
     const request = new Request(input, init);
     const url = new URL(request.url);
@@ -22,6 +25,10 @@ async function main() {
     if (url.pathname.includes("/rpc/")) {
       if (error) return Response.json({ message: error, code: "P0001" }, { status: 400 });
       return Response.json({ ok: true, source: { source_id: target, enabled: body?.p_activate_known_adapter === true } });
+    }
+    if (url.pathname.endsWith("/source_candidates")) {
+      if (request.method === "HEAD") return new Response(null, { status: countError ? 503 : 200, headers: { "Content-Range": `*/${filteredCount}` } });
+      if (paginationError) return Response.json({ code: paginationError, message: "private range details", details: "Requested range not satisfiable" }, { status: 416 });
     }
     if (request.method === "HEAD") return new Response(null, { headers: { "Content-Range": "0-0/0" } });
     assert.equal(request.method, "GET");
@@ -65,6 +72,23 @@ async function main() {
     assert.ok(candidateQueries.every((call) => call.url.searchParams.get("select")?.includes("operational_source:collector_sources!source_candidates_operational_source_id_fkey")), "history must include its real operational destination");
     assert.equal(candidateQueries.find((call) => call.url.searchParams.get("status") === "eq.CANDIDATE")!.url.searchParams.get("offset"), "50");
     assert.equal(candidateQueries.find((call) => call.url.searchParams.get("status") === "in.(APPROVED,REJECTED)")!.url.searchParams.get("offset"), "100");
+    paginationError = "PGRST103";
+    response = await GET(new Request("https://simulaai.test/api/admin/operations?candidateOffset=50&historyOffset=100", { headers: { authorization: "Bearer fixture-user" } }));
+    assert.equal(response.status, 200, "valid pages beyond the end must be empty, not unavailable");
+    const emptyPage = await response.json();
+    assert.deepEqual(emptyPage.data.sourceCandidates, []);
+    assert.deepEqual(emptyPage.data.sourceHistory, []);
+    assert.equal(emptyPage.data.counts.sourceCandidates, 13);
+    assert.equal(emptyPage.data.counts.sourceHistory, 13);
+    for (const failure of ["other-error", "count-failure", "inconsistent-count"]) {
+      paginationError = failure === "other-error" ? "PGRST999" : "PGRST103";
+      countError = failure === "count-failure";
+      filteredCount = failure === "inconsistent-count" ? 150 : 13;
+      response = await GET(new Request("https://simulaai.test/api/admin/operations?candidateOffset=50&historyOffset=100", { headers: { authorization: "Bearer fixture-user" } }));
+      assert.equal(response.status, 503, `${failure} must remain a real error`);
+      assert.doesNotMatch(await response.text(), /private range details/);
+    }
+    paginationError = ""; countError = false;
     for (const query of ["candidateOffset=-1", "historyOffset=1.2", "historyOffset=1000001", "historyOffset=1&historyOffset=2", "unexpected=1"]) {
       calls.length = 0;
       response = await GET(new Request(`https://simulaai.test/api/admin/operations?${query}`, { headers: { authorization: "Bearer fixture-user" } }));
