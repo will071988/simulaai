@@ -9,7 +9,7 @@ for (const metric of ["averageScore", "averageTimeSeconds", "questionsAnswered",
   assert.match(dashboard, new RegExp(metric), `dashboard must render ${metric}`);
 }
 assert.match(progressRoute, /authenticatedUser\(request\)/, "progress must require an authenticated user");
-assert.match(progressRoute, /cache-control[\s\S]*no-store/, "personal progress must never be cached");
+assert.match(progressRoute, /private, no-store/, "personal progress must be explicitly private and never cached");
 assert.match(generateRoute, /p_user_id:\s*user\?\.id\s*\|\|\s*null/, "signed-in attempts must be linked to their owner");
 assert.doesNotMatch(dashboard, /mockData|exampleMetrics|sampleScore/i, "dashboard must not contain fabricated metrics");
 
