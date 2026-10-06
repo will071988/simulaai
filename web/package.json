@@ -37,6 +37,7 @@
     "test:2.5": "tsx scripts/validate-2.5.ts && tsx scripts/validate-2.5-actions.ts && tsx scripts/validate-2.5-preselection.ts && tsx scripts/validate-2.5-database.ts",
     "test:2.6": "tsx scripts/validate-2.6.ts && tsx scripts/validate-2.6-database.ts && tsx scripts/validate-2.6-conflicts.ts && tsx scripts/validate-2.6-operations-api.ts",
     "test:2.6:ui-fixture": "tsx scripts/validate-2.6-ui-fixture.ts",
+    "test:account:ui-fixture": "tsx scripts/validate-signup-ui-fixture.ts",
     "test:2.7": "tsx scripts/validate-2.7.ts && tsx scripts/validate-2.7-database.ts",
     "test:2.7:live": "node --env-file=.env.local --import tsx scripts/validate-2.7-live.ts",
     "smoke:2.6:auth": "tsx scripts/smoke-admin-2.6.ts",

@@ -64,7 +64,8 @@ export default function ContaPage() {
         if (nome.trim().length < 2 || password.length < 8) { setError("Informe seu nome e use uma senha com pelo menos 8 caracteres."); return; }
         const { data, error: authError } = await supabase.auth.signUp({ email: email.trim(), password, options: { data: { nome: nome.trim() }, emailRedirectTo: `${window.location.origin}/conta` } });
         if (authError) { setError(authMessage(authError.code)); return; }
-        setNotice(data.session ? "Conta criada e sessão iniciada." : "Conta criada. Enviamos um e-mail para confirmar seu acesso.");
+        // A successful signUp can also be an obfuscated response for an existing account.
+        setNotice(data.session ? "Sessão iniciada com segurança." : "Solicitação de cadastro recebida. Se o endereço precisar de confirmação, verifique sua caixa de entrada e o spam. Se você já tem uma conta, use Entrar com sua senha original; repetir o cadastro não altera a senha.");
       } else {
         const { error: authError } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
         if (authError) { setError(authMessage(authError.code)); return; }
@@ -148,7 +149,7 @@ export default function ContaPage() {
           <button disabled={busy} className="w-full rounded-full bg-zinc-900 py-3 font-bold text-white disabled:opacity-50">{busy ? "Aguarde…" : mode === "cadastro" ? "Criar conta" : "Entrar"}</button>
         </form>
         {mode === "entrar" && <><div className="my-5 flex items-center gap-3 text-xs text-zinc-400"><span className="h-px flex-1 bg-zinc-200" />ou<span className="h-px flex-1 bg-zinc-200" /></div><button onClick={sendMagicLink} disabled={busy || !email.trim()} className="w-full rounded-full border border-zinc-300 py-3 font-bold disabled:opacity-50">Enviar link mágico</button></>}
-        <p className="mt-5 text-xs text-zinc-500">Sem login social e sem dados desnecessários. Ao usar link mágico, a conta precisa existir.</p>
+        <p className="mt-5 text-xs text-zinc-500">Já tem uma conta? Use Entrar com sua senha original. Repetir o cadastro não altera a senha. Ao usar link mágico, a conta precisa existir.</p>
       </div>}
     </main>
     <Footer />

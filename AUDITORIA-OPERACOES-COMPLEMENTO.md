@@ -38,3 +38,13 @@ Para repetir o fixture: servir o build com `npm run start -- --hostname 127.0.0.
 O usuário interrompeu o controle do Chrome com Esc antes da verificação autenticada. Esse controle permaneceu interrompido. Pendência: validar os novos fluxos com sessão admin autorizada no deployment publicado. O fixture local não substitui esse gate; não iniciar a Sprint 2.8 antes de fechar essa validação.
 
 As mudanças anteriores à sincronização foram preservadas em um stash nomeado `Sprint 2.6 source and conflict completion before syncing main`, mantido como recuperação adicional.
+
+## Confusão no cadastro e acesso pendente
+
+Uma consulta somente de leitura no Auth autorizado confirmou que a conta do administrador já tem e-mail confirmado desde 2026-09-05 e senha cadastrada. A página de cadastro afirmava que uma conta havia sido criada e um e-mail enviado sempre que `signUp` retornava sem erro e sem sessão, inclusive na resposta ofuscada para conta existente. Esse texto não era prova de envio ou de entrega; nenhum diagnóstico de falha SMTP foi inferido.
+
+A mensagem foi substituída por confirmação neutra da solicitação, orientação condicional para verificar confirmação e instrução para quem já tem conta usar Entrar com a senha original. Nenhuma consulta pública de existência de conta foi adicionada, nem conta, senha, configuração de Auth ou e-mail foram alterados.
+
+`test:2.0`, lint direcionado, TypeScript e build passaram. `test:account:ui-fixture` executou a página compilada em loopback, com rede externa bloqueada e respostas simuladas de cadastro novo e conta existente. Nos dois casos, comprovou mensagem idêntica sem afirmação de criação/envio, orientação para Entrar, limpeza do campo de senha e acesso à aba de login. O teste fechou navegador e contextos; o servidor local foi encerrado. Para repetir, servir na porta 3026 e definir `BROWSER_EXECUTABLE_PATH`, como no fixture operacional acima.
+
+Isso corrige a orientação, mas não substitui a validação autenticada dos novos fluxos operacionais em produção. Esse gate continua pendente, sem avanço para a Sprint 2.8.
