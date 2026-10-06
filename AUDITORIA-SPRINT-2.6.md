@@ -55,3 +55,5 @@ Implementação inicial em `aa31f7eaadaff67947b5544fbb124aebd44fb447`. Hardening
 ## Estado final
 
 Painel privado, RBAC, ações allowlisted, auditoria, banco, CI, deployment e smokes público/autenticado validados. **SPRINT 2.6 FECHADA.**
+
+O [complemento operacional](AUDITORIA-OPERACOES-COMPLEMENTO.md) registra a validação adicional de destino da aprovação de fonte e detalhe privado de conflitos, com seus próprios gates de publicação. O fechamento acima descreve a versão originalmente validada.

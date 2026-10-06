@@ -5,18 +5,21 @@ import Link from "next/link";
 import { Header, Footer } from "@/components/Header";
 import { supabase } from "@/lib/supabase";
 import type { OperationAction } from "@/lib/admin/operations";
+import { ConflictReview } from "@/components/admin/ConflictReview";
 
-type Source = { id: string; name: string; base_url: string; enabled: boolean; health_status: string; failure_count: number; last_error_code: string | null; last_checked_at: string | null };
+type Source = { id: string; name: string; base_url: string; adapter: string | null; tier: number; enabled: boolean; disabled_reason: string | null; approved_candidate_id: string | null; health_status: string; failure_count: number; last_error_code: string | null; last_checked_at: string | null };
 type Run = { id: string; started_at: string; status: string; sources_checked: number; sources_failed: number; ai_requests: number; ai_success: number; ai_invalid_schema: number; errors_count: number };
 type Document = { id: string; title: string | null; source_url: string; status: string; ai_retry_count: number; ai_last_error_code: string | null; ai_next_attempt_at?: string | null; retryable?: boolean };
-type Candidate = { id: string; url: string; domain: string; reason: string; confidence: number; status: string };
+type Candidate = { id: string; url: string; domain: string; reason: string; confidence: number; status: string; official_url: string | null; reviewed_at: string | null; review_notes: string | null; operational_source: Pick<Source, "id" | "name" | "base_url" | "adapter" | "tier" | "enabled" | "disabled_reason"> | null };
 type Conflict = { id: string; titulo: string; orgao: string; quality_status: string };
 type Duplicate = { id: string; concurso_a_id: string; concurso_b_id: string; score: number; reason: string };
 type ActionLog = { id: string; action: string; target_id: string; note: string | null; created_at: string };
 type Operations = {
   runs: Run[]; sources: Source[]; aiPending: Document[]; failedDocuments: Document[];
   conflictedContests: Conflict[]; duplicateCandidates: Duplicate[]; sourceCandidates: Candidate[];
-  counts: { aiPending: number; failedDocuments: number; conflictedContests: number; duplicateCandidates: number; sourceCandidates: number };
+  sourceHistory: Candidate[]; sourcePagination: { candidateOffset: number; historyOffset: number; limit: number };
+  knownAdapters: { name: string; baseUrl: string; tier: number }[];
+  counts: { sources: number; aiPending: number; failedDocuments: number; conflictedContests: number; duplicateCandidates: number; sourceCandidates: number; sourceHistory: number };
   invalidSchemas: number; aiBudget: { day: string; reserved: number; limit: number };
   aiFailures: { id: string; provider: string | null; model: string | null; task_type: string | null; error_code: string | null; created_at: string }[];
   aiFailureCount7d: number;
@@ -42,17 +45,20 @@ export default function OperationsPage() {
   const [loading, setLoading] = useState(true);
   const [forbidden, setForbidden] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [officialUrls, setOfficialUrls] = useState<Record<string, string>>({});
   const requestGeneration = useRef(0);
   const currentToken = useRef<string | null>(null);
+  const sourceOffsets = useRef({ candidateOffset: 0, historyOffset: 0 });
 
   const load = useCallback(async (accessToken: string) => {
     const generation = ++requestGeneration.current;
     setLoading(true); setError("");
     try {
-      const response = await fetch("/api/admin/operations", { headers: { authorization: `Bearer ${accessToken}` }, cache: "no-store" });
+      const query = new URLSearchParams({ candidateOffset: String(sourceOffsets.current.candidateOffset), historyOffset: String(sourceOffsets.current.historyOffset) });
+      const response = await fetch(`/api/admin/operations?${query}`, { headers: { authorization: `Bearer ${accessToken}` }, cache: "no-store" });
       if (generation !== requestGeneration.current || currentToken.current !== accessToken) return;
       if (response.status === 403) { setForbidden(true); setData(null); return; }
       if (!response.ok) throw new Error("LOAD_FAILED");
@@ -72,6 +78,8 @@ export default function OperationsPage() {
       tokenRef.current = session?.access_token || null;
       setToken(session?.access_token || null);
       setData(null);
+      setNotice(""); setNotes({}); setOfficialUrls({});
+      sourceOffsets.current = { candidateOffset: 0, historyOffset: 0 };
       if (session) void load(session.access_token);
       else { generationRef.current++; setForbidden(false); setLoading(false); }
     });
@@ -80,20 +88,32 @@ export default function OperationsPage() {
 
   async function act(action: OperationAction) {
     if (!token || busy) return;
-    if (!window.confirm(`Confirmar ${action.action} para ${action.targetId}?`)) return;
-    setBusy(action.targetId); setError("");
+    if (!window.confirm(`Confirmar ${action.action}${action.activateKnownAdapter ? " com ativação do adaptador conhecido no próximo ciclo" : ""} para ${action.targetId}?`)) return;
+    setBusy(action.targetId); setError(""); setNotice("");
     try {
       const response = await fetch("/api/admin/operations", {
         method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
         body: JSON.stringify(action), cache: "no-store",
       });
-      if (!response.ok) throw new Error("ACTION_FAILED");
+      if (!response.ok) {
+        const failure = await response.json().catch(() => null);
+        throw new Error(response.status === 409 ? failure?.error || "TARGET_NOT_ACTIONABLE" : "ACTION_FAILED");
+      }
+      const result = await response.json();
       if (currentToken.current !== token) return;
+      const source = result.data?.source;
+      if (source) setNotice(`${source.source_name}: ${source.enabled ? "fonte ativa; a coleta ocorre no próximo ciclo" : source.adapter ? "fonte registrada e desativada; ativação explícita pendente" : "fonte registrada e desativada; aguarda implementação de adaptador"}.`);
+      else setNotice("Ação registrada na auditoria.");
       await load(token);
-    } catch {
+    } catch (failure) {
       if (currentToken.current === token) {
         await load(token);
-        setError("Não foi possível confirmar o resultado da ação. Confira o estado e a auditoria antes de tentar novamente.");
+        const messages: Record<string, string> = {
+          SOURCE_IDENTITY_MISMATCH: "A fonte cadastrada não corresponde à configuração do adaptador. A ativação foi recusada; revise a configuração antes de tentar novamente.",
+          ADAPTER_NOT_SUPPORTED: "Este domínio não tem adaptador disponível. A ativação foi recusada.",
+          TARGET_NOT_ACTIONABLE: "Este item não permite a ação no estado atual. Os dados foram atualizados.",
+        };
+        setError(messages[failure instanceof Error ? failure.message : ""] || "Não foi possível confirmar o resultado da ação. Confira o estado e a auditoria antes de tentar novamente.");
       }
     }
     finally { setBusy(null); }
@@ -101,11 +121,22 @@ export default function OperationsPage() {
 
   const input = (id: string, placeholder: string) => <input aria-label={placeholder} value={notes[id] || ""} onChange={(event) => setNotes((current) => ({ ...current, [id]: event.target.value }))} placeholder={placeholder} maxLength={2000} className="mt-2 w-full rounded-xl border border-white/20 bg-zinc-950 px-3 py-2 text-sm text-white" />;
   const button = (label: string, action: OperationAction, disabled = false) => <button type="button" disabled={Boolean(busy) || disabled} onClick={() => void act(action)} className="mt-2 rounded-full border border-cyan-300/50 px-4 py-2 text-sm font-semibold text-cyan-100 disabled:opacity-40">{label}</button>;
+  const knownAdapter = (url: string | null | undefined) => {
+    try { return data?.knownAdapters.find((adapter) => new URL(url || "").origin === adapter.baseUrl); } catch { return undefined; }
+  };
+  const sourcePager = (key: "candidateOffset" | "historyOffset", total: number) => {
+    if (!data) return null;
+    const offset = data.sourcePagination[key];
+    const limit = data.sourcePagination.limit;
+    const change = (next: number) => { sourceOffsets.current = { ...sourceOffsets.current, [key]: next }; if (token) void load(token); };
+    return <nav aria-label={key === "candidateOffset" ? "Páginas de candidatos" : "Páginas do histórico de fontes"} className="mt-3 flex items-center gap-3 text-xs"><span>{total ? `${offset + 1}–${Math.min(offset + limit, total)}` : "0"} de {total}</span><button type="button" disabled={loading || Boolean(busy) || !offset} onClick={() => change(Math.max(0, offset - limit))} className="underline disabled:opacity-40">Anteriores</button><button type="button" disabled={loading || Boolean(busy) || offset + limit >= total} onClick={() => change(offset + limit)} className="underline disabled:opacity-40">Próximos</button></nav>;
+  };
 
   return <div className="mesh min-h-screen"><Header /><main className="mx-auto max-w-7xl px-6 py-10">
     <h1 className="font-display text-3xl font-bold">Operações</h1>
     <p className="mt-2 text-white/60">Painel privado. Ações restritas, auditadas e sem SQL livre ou comandos arbitrários.</p>
     {data && token && <button type="button" onClick={() => void load(token)} disabled={loading || Boolean(busy)} className="mt-4 rounded-full border border-white/30 px-4 py-2 text-sm font-semibold disabled:opacity-40">Atualizar dados</button>}
+    {notice && token && <p role="status" className="mt-4 rounded-xl bg-cyan-500/10 p-4 text-cyan-100">{notice}</p>}
     {loading ? <p role="status" className="mt-8">Carregando acesso…</p> : !token ? <section className={`${box} mt-8`}><p>Entre com uma conta administradora para acessar o painel.</p><Link href="/conta" className="mt-3 inline-block underline">Entrar</Link></section> : forbidden ? <p role="alert" className="mt-8">Acesso restrito a administradores.</p> : data ? <div className="mt-8 space-y-6">
       <div className="grid gap-4 md:grid-cols-3">
         <section className={box}><h2 className="font-bold">Saúde do coletor</h2><p className="mt-2 text-2xl">{data.runs[0]?.status || "Sem execução"}</p><p className="text-sm text-white/60">Última execução: {date(data.runs[0]?.started_at)}</p></section>
@@ -117,11 +148,12 @@ export default function OperationsPage() {
       </div>
       <div className="grid gap-6 lg:grid-cols-2">
         <section className={box}><h2 className="text-xl font-bold">IA pendente ({data.counts.aiPending})</h2><p className="text-sm text-white/60">Até 50 documentos mais recentes; o processamento é feito pela fila, sem disparo manual arbitrário.</p><div className="mt-3 max-h-80 space-y-2 overflow-auto">{data.aiPending.map((doc) => <article key={doc.id} className="rounded-xl bg-white/5 p-3"><b>{doc.title || "Documento sem título"}</b><p className="break-all text-xs text-white/60">{doc.source_url}</p><p className="text-xs">Próxima tentativa: {date(doc.ai_next_attempt_at)} · {doc.ai_last_error_code || "sem erro registrado"}</p></article>)}{!data.aiPending.length && <p className="text-white/60">Nenhum documento aguardando IA.</p>}</div></section>
-        <section className={box}><h2 className="text-xl font-bold">Fontes ({data.sources.length})</h2><div className="mt-3 max-h-80 space-y-2 overflow-auto">{data.sources.map((source) => <article key={source.id} className="rounded-xl bg-white/5 p-3"><b>{source.name}</b> · {source.health_status} {source.enabled ? "" : "(desativada)"}<p className="text-xs text-white/60">{source.base_url} · {source.failure_count} falhas · última checagem {date(source.last_checked_at)}</p></article>)}</div></section>
+        <section className={box}><h2 className="text-xl font-bold">Fontes ({data.counts.sources})</h2><p className="text-xs text-white/60">Até 100 fontes por nome; o destino de cada aprovação também aparece no histórico abaixo.</p><div className="mt-3 max-h-80 space-y-2 overflow-auto">{data.sources.map((source) => <article key={source.id} className="rounded-xl bg-white/5 p-3"><b>{source.name}</b> · {source.health_status} {source.enabled ? "" : "(desativada)"}<p className="text-xs text-white/60">{source.base_url} · {source.failure_count} falhas · última checagem {date(source.last_checked_at)}</p><p className="text-xs">Adaptador: {source.adapter || "não implementado"} · {source.disabled_reason || "sem bloqueio"}</p>{source.approved_candidate_id && <p className="break-all text-xs text-white/60">Aprovação vinculada: {source.approved_candidate_id}</p>}</article>)}</div></section>
         <section className={box}><h2 className="text-xl font-bold">Falhas de fontes</h2><div className="mt-3 max-h-80 space-y-2 overflow-auto">{data.sources.filter((source) => source.enabled && source.health_status !== "HEALTHY").map((source) => <article key={source.id} className="rounded-xl bg-red-500/10 p-3"><b>{source.name}</b> · {source.health_status}<p className="text-xs">{source.last_error_code || "Sem código de erro"}</p></article>)}{!data.sources.some((source) => source.enabled && source.health_status !== "HEALTHY") && <p className="text-white/60">Nenhuma fonte ativa degradada.</p>}</div></section>
         <section className={box}><h2 className="text-xl font-bold">Documentos falhos ({data.counts.failedDocuments})</h2><div className="mt-3 max-h-96 space-y-3 overflow-auto">{data.failedDocuments.map((doc) => <article key={doc.id} className="rounded-xl bg-white/5 p-3"><b>{doc.title || doc.source_url}</b><p className="break-all text-xs text-white/60">{doc.source_url}</p><p className="text-xs">{doc.ai_last_error_code || "Falha sem código"} · {doc.ai_retry_count} tentativas</p>{button(doc.retryable ? "Tentar novamente" : "Retry indisponível", { action: "RETRY_DOCUMENT", targetId: doc.id }, !doc.retryable)}</article>)}{!data.failedDocuments.length && <p className="text-white/60">Nenhum documento falho.</p>}</div></section>
-        <section className={box}><h2 className="text-xl font-bold">Candidatos de fonte ({data.counts.sourceCandidates})</h2><div className="mt-3 max-h-96 space-y-3 overflow-auto">{data.sourceCandidates.map((candidate) => <article key={candidate.id} className="rounded-xl bg-white/5 p-3"><b>{candidate.domain}</b><p className="break-all text-xs text-white/60">{candidate.url}</p><p className="text-xs">{candidate.reason} · confiança {candidate.confidence}</p><input aria-label={`URL oficial para ${candidate.domain}`} value={officialUrls[candidate.id] || ""} onChange={(event) => setOfficialUrls((current) => ({ ...current, [candidate.id]: event.target.value }))} placeholder="URL HTTPS oficial verificada" className="mt-2 w-full rounded-xl border border-white/20 bg-zinc-950 px-3 py-2 text-sm" />{input(candidate.id, "Nota de revisão")}<div className="flex gap-2">{button("Aprovar fonte", { action: "APPROVE_SOURCE", targetId: candidate.id, officialUrl: officialUrls[candidate.id], note: notes[candidate.id] }, !officialUrls[candidate.id] || (notes[candidate.id] || "").trim().length < 5)}{button("Rejeitar candidato", { action: "REJECT_SOURCE_CANDIDATE", targetId: candidate.id, note: notes[candidate.id] }, (notes[candidate.id] || "").trim().length < 5)}</div></article>)}{!data.sourceCandidates.length && <p className="text-white/60">Nenhum candidato pendente.</p>}</div></section>
-        <section className={box}><h2 className="text-xl font-bold">Concursos em conflito ({data.counts.conflictedContests})</h2><div className="mt-3 max-h-96 space-y-3 overflow-auto">{data.conflictedContests.map((contest) => <article key={contest.id} className="rounded-xl bg-white/5 p-3"><b>{contest.titulo}</b><p className="text-xs text-white/60">{contest.orgao} · {contest.id}</p>{data.conflictReviews.find((review) => review.concurso_id === contest.id) && <p className="mt-1 text-xs text-amber-200">Última revisão: {date(data.conflictReviews.find((review) => review.concurso_id === contest.id)?.reviewed_at)}</p>}{input(contest.id, "Nota da revisão do conflito")}{button("Registrar revisão", { action: "REVIEW_CONFLICT", targetId: contest.id, note: notes[contest.id] }, (notes[contest.id] || "").trim().length < 5)}</article>)}{!data.conflictedContests.length && <p className="text-white/60">Nenhum conflito aberto.</p>}</div></section>
+        <section className={box}><h2 className="text-xl font-bold">Candidatos de fonte ({data.counts.sourceCandidates})</h2><p className="text-xs text-white/60">A aprovação registra a fonte. Um domínio novo fica desativado até ter adaptador; fontes já ativas continuam ativas.</p><div className="mt-3 max-h-96 space-y-3 overflow-auto">{data.sourceCandidates.map((candidate) => <article key={candidate.id} className="rounded-xl bg-white/5 p-3"><b>{candidate.domain}</b><p className="break-all text-xs text-white/60">{candidate.url}</p><p className="text-xs">{candidate.reason} · confiança {candidate.confidence}</p><input aria-label={`URL oficial para ${candidate.domain}`} value={officialUrls[candidate.id] || ""} onChange={(event) => setOfficialUrls((current) => ({ ...current, [candidate.id]: event.target.value }))} placeholder="URL HTTPS oficial verificada" maxLength={2048} className="mt-2 w-full rounded-xl border border-white/20 bg-zinc-950 px-3 py-2 text-sm" />{input(candidate.id, "Nota de revisão")}<div className="flex flex-wrap gap-2">{button("Aprovar fonte", { action: "APPROVE_SOURCE", targetId: candidate.id, officialUrl: officialUrls[candidate.id], note: notes[candidate.id] }, !officialUrls[candidate.id] || (notes[candidate.id] || "").trim().length < 5)}{knownAdapter(officialUrls[candidate.id]) && button("Aprovar e ativar adaptador", { action: "APPROVE_SOURCE", targetId: candidate.id, officialUrl: officialUrls[candidate.id], note: notes[candidate.id], activateKnownAdapter: true }, (notes[candidate.id] || "").trim().length < 5)}{button("Rejeitar candidato", { action: "REJECT_SOURCE_CANDIDATE", targetId: candidate.id, note: notes[candidate.id] }, (notes[candidate.id] || "").trim().length < 5)}</div></article>)}{!data.sourceCandidates.length && <p className="text-white/60">Nenhum candidato nesta página.</p>}</div>{sourcePager("candidateOffset", data.counts.sourceCandidates)}</section>
+        <section className={box}><h2 className="text-xl font-bold">Histórico de fontes revisadas ({data.counts.sourceHistory})</h2><div className="mt-3 max-h-96 space-y-3 overflow-auto">{data.sourceHistory.map((candidate) => <article key={candidate.id} className="rounded-xl bg-white/5 p-3"><b>{candidate.domain}</b> · {candidate.status}<p className="break-all text-xs text-white/60">{candidate.official_url || candidate.url} · {date(candidate.reviewed_at)}</p><p className="whitespace-pre-wrap break-words text-sm">{candidate.review_notes}</p>{candidate.operational_source ? <p className="mt-2 text-xs text-cyan-200">Destino: {candidate.operational_source.name} · {candidate.operational_source.enabled ? "ativa" : "desativada"} · {candidate.operational_source.disabled_reason || "sem bloqueio"} · {candidate.operational_source.id}</p> : candidate.status === "APPROVED" ? <p className="mt-2 text-xs text-amber-200">Aprovação anterior sem registro operacional vinculado.</p> : null}{candidate.status === "APPROVED" && (!candidate.operational_source || (!candidate.operational_source.enabled && knownAdapter(candidate.official_url))) && <>{input(candidate.id, "Nota de registro ou ativação")}{!candidate.operational_source && button("Registrar fonte aprovada", { action: "APPROVE_SOURCE", targetId: candidate.id, officialUrl: candidate.official_url || undefined, note: notes[candidate.id] }, (notes[candidate.id] || "").trim().length < 5)}{knownAdapter(candidate.official_url) && button("Ativar adaptador conhecido", { action: "APPROVE_SOURCE", targetId: candidate.id, officialUrl: candidate.official_url || undefined, note: notes[candidate.id], activateKnownAdapter: true }, (notes[candidate.id] || "").trim().length < 5)}</>}</article>)}</div>{sourcePager("historyOffset", data.counts.sourceHistory)}</section>
+        <section className={box}><h2 className="text-xl font-bold">Concursos em conflito ({data.counts.conflictedContests})</h2><div className="mt-3 space-y-3">{data.conflictedContests.map((contest) => <article key={contest.id} className="rounded-xl bg-white/5 p-3"><b>{contest.titulo}</b><p className="text-xs text-white/60">{contest.orgao} · {contest.id}</p>{data.conflictReviews.find((review) => review.concurso_id === contest.id) && <p className="mt-1 text-xs text-amber-200">Última revisão: {date(data.conflictReviews.find((review) => review.concurso_id === contest.id)?.reviewed_at)}</p>}<ConflictReview id={contest.id} token={token} busy={Boolean(busy)} onAction={act} /></article>)}{!data.conflictedContests.length && <p className="text-white/60">Nenhum conflito aberto.</p>}</div></section>
         <section className={box}><h2 className="text-xl font-bold">Duplicatas candidatas ({data.counts.duplicateCandidates})</h2><div className="mt-3 max-h-96 space-y-2 overflow-auto">{data.duplicateCandidates.map((item) => <article key={item.id} className="rounded-xl bg-white/5 p-3"><b>Pontuação {item.score}</b><p className="text-xs text-white/60">{item.concurso_a_id} ↔ {item.concurso_b_id}</p><p className="text-xs">{item.reason}</p></article>)}{!data.duplicateCandidates.length && <p className="text-white/60">Nenhuma duplicata pendente.</p>}</div></section>
         <section className={box}><h2 className="text-xl font-bold">Esquemas inválidos</h2><p className="mt-2 text-2xl">{data.invalidSchemas}</p><p className="text-sm text-white/60">Ocorrências nas últimas 20 execuções.</p><div className="mt-3 max-h-48 space-y-2 overflow-auto">{data.runs.filter((run) => run.ai_invalid_schema > 0).map((run) => <p key={run.id} className="rounded-xl bg-amber-500/10 p-2 text-sm">{date(run.started_at)} · {run.ai_invalid_schema} resposta(s) inválida(s) · execução {run.id}</p>)}{!data.runs.some((run) => run.ai_invalid_schema > 0) && <p className="text-sm text-white/60">Nenhuma ocorrência recente.</p>}</div></section>
         <section className={box}><h2 className="text-xl font-bold">Falhas recentes de IA ({data.aiFailureCount7d} em 7 dias)</h2><p className="text-sm text-white/60">Até 30 falhas mais recentes.</p><div className="mt-3 max-h-48 space-y-2 overflow-auto">{data.aiFailures.map((item) => <p key={item.id} className="rounded-xl bg-red-500/10 p-2 text-sm">{date(item.created_at)} · {item.provider || "Provedor não informado"} · {item.error_code || "sem código"}</p>)}{!data.aiFailures.length && <p className="text-sm text-white/60">Nenhuma falha em sete dias.</p>}</div></section>

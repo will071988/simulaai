@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createCollectorDatabase } from "./support/collectorDatabase";
 import { mayActivateCandidate } from "../src/lib/collector/sourceRegistry";
+import { adapters } from "../src/lib/collector/adapters";
 
 async function main() {
   const { db } = await createCollectorDatabase();
@@ -9,11 +10,18 @@ async function main() {
     const before = await db.query<{ count: number }>("select count(*)::int count from collector_documents");
     await db.exec(readFileSync("../supabase/migrations/20261004203913_admin_operations.sql", "utf8"));
     await db.exec(readFileSync("../supabase/migrations/20261005120000_restrict_admin_document_retry.sql", "utf8"));
+    await db.exec(readFileSync("../supabase/migrations/20261006010000_operational_source_approval.sql", "utf8"));
     const after = await db.query<{ count: number }>("select count(*)::int count from collector_documents");
     assert.equal(after.rows[0].count, before.rows[0].count, "migration may not modify existing documents");
     assert.equal((await db.query<{ count: number }>("select count(*)::int count from ops_admin_members")).rows[0].count, 0, "no implicit admin");
     const roles = await db.query<{ anon: boolean; authenticated: boolean; service: boolean; rls: boolean }>("select has_function_privilege('anon','ops_apply_action(uuid,text,uuid,text,text)','execute') anon, has_function_privilege('authenticated','ops_apply_action(uuid,text,uuid,text,text)','execute') authenticated, has_function_privilege('service_role','ops_apply_action(uuid,text,uuid,text,text)','execute') service, (select relrowsecurity from pg_class where oid='ops_admin_members'::regclass) rls");
     assert.deepEqual(roles.rows[0], { anon: false, authenticated: false, service: true, rls: true });
+    const approvalRoles = await db.query<{ anon: boolean; authenticated: boolean; service: boolean }>("select has_function_privilege('anon','ops_approve_source(uuid,uuid,text,text,boolean)','execute') anon, has_function_privilege('authenticated','ops_approve_source(uuid,uuid,text,text,boolean)','execute') authenticated, has_function_privilege('service_role','ops_approve_source(uuid,uuid,text,text,boolean)','execute') service");
+    assert.deepEqual(approvalRoles.rows[0], { anon: false, authenticated: false, service: true });
+    for (const adapter of adapters) {
+      const compiled = (await db.query<{ name: string; base_url: string; adapter: string; tier: number }>("select name,base_url,adapter,tier from ops_known_source_adapter($1)", [new URL(adapter.baseUrl).hostname])).rows[0];
+      assert.deepEqual(compiled, { name: adapter.sourceName, base_url: adapter.baseUrl, adapter: adapter.sourceName, tier: adapter.tier }, "SQL activation catalog must match compiled adapters");
+    }
     const actor = (await db.query<{ id: string }>("insert into auth.users(email) values('operator@fixture.test') returning id")).rows[0].id;
     const outsider = (await db.query<{ id: string }>("insert into auth.users(email) values('outsider@fixture.test') returning id")).rows[0].id;
     const source = (await db.query<{ id: string }>("select id from collector_sources limit 1")).rows[0].id;
@@ -36,8 +44,12 @@ async function main() {
     assert.equal(approved.reviewed_by, actor);
     assert.ok(approved.reviewed_at);
     assert.equal(mayActivateCandidate({ status: approved.status, officialUrl: approved.official_url, reviewedBy: approved.reviewed_by }), true);
-    await db.query("insert into collector_sources(name,base_url,type,tier,source_type,adapter,approved_candidate_id) values('Approved ops fixture','https://official.test/contest','portal',3,'DISCOVERY_AUXILIAR','Approved ops fixture',$1)", [candidate]);
-    assert.equal((await db.query<{ enabled: boolean }>("select enabled from collector_sources where name='Approved ops fixture'")).rows[0].enabled, true, "approved candidate must satisfy source governance");
+    const registered = (await db.query<{ id: string; enabled: boolean; adapter: string | null; tier: number; source_type: string; disabled_reason: string; approved_candidate_id: string }>("select id,enabled,adapter,tier,source_type,disabled_reason,approved_candidate_id from collector_sources where hostname='official.test'")).rows[0];
+    assert.ok(registered.id, "approval RPC itself must create the operational source");
+    assert.equal(registered.enabled, false); assert.equal(registered.adapter, null); assert.equal(registered.tier, 3);
+    assert.equal(registered.source_type, "DISCOVERY_AUXILIAR"); assert.equal(registered.disabled_reason, "APPROVED_PENDING_ADAPTER");
+    assert.equal(registered.approved_candidate_id, candidate);
+    assert.equal((await db.query<{ operational_source_id: string }>("select operational_source_id from source_candidates where id=$1", [candidate])).rows[0].operational_source_id, registered.id);
     const rejected = (await db.query<{ id: string }>("insert into source_candidates(url,domain) values('https://aggregator.test/logo.png','aggregator.test') returning id")).rows[0].id;
     await db.query("select ops_apply_action($1,'REJECT_SOURCE_CANDIDATE',$2,'Image is not a source')", [actor, rejected]);
     assert.equal((await db.query<{ status: string }>("select status from source_candidates where id=$1", [rejected])).rows[0].status, "REJECTED");
@@ -49,7 +61,35 @@ async function main() {
     assert.equal((await db.query<{ count: number }>("select count(*)::int count from ops_action_log", [])).rows[0].count, 4, "only successful actions are audited");
     assert.deepEqual((await db.query<{ actor_user_id: string; action: string; target_id: string; official_url: string }>("select actor_user_id,action,target_id,details->>'official_url' official_url from ops_action_log where action='APPROVE_SOURCE'")).rows[0], { actor_user_id: actor, action: "APPROVE_SOURCE", target_id: candidate, official_url: "https://official.test/contest" }, "source approval must retain actor and official evidence in audit");
     await assert.rejects(db.query("select ops_apply_action($1,'ARBITRARY_SQL',$2)", [actor, contest]), /OPS_UNKNOWN_ACTION/);
-    console.log("Sprint 2.6 PostgreSQL RBAC, restricted actions, audit and data preservation passed");
+    await assert.rejects(db.query("select ops_approve_source($1,$2,'Activate rejected source','https://aggregator.test/logo.png',true)", [actor, rejected]), /OPS_TARGET_NOT_ACTIONABLE/);
+    await assert.rejects(db.query("select ops_approve_source($1,$2,'Activate unknown source','https://official.test/contest',true)", [actor, candidate]), /OPS_ADAPTER_NOT_SUPPORTED/);
+    await db.query("select ops_apply_action($1,'APPROVE_SOURCE',$2,'Repeat verified registration','https://official.test/contest')", [actor, candidate]);
+    assert.equal((await db.query<{ count: number }>("select count(*)::int count from collector_sources where hostname='official.test'")).rows[0].count, 1);
+    const secondCandidate = (await db.query<{ id: string }>("insert into source_candidates(url,domain) values('https://official.test/second','official.test') returning id")).rows[0].id;
+    await db.query("select ops_apply_action($1,'APPROVE_SOURCE',$2,'Second page on same source','https://official.test/second')", [actor, secondCandidate]);
+    assert.equal((await db.query<{ operational_source_id: string }>("select operational_source_id from source_candidates where id=$1", [secondCandidate])).rows[0].operational_source_id, registered.id);
+    assert.equal((await db.query<{ operational_source_id: string }>("select operational_source_id from source_candidates where id=$1", [candidate])).rows[0].operational_source_id, registered.id, "later approval must not lose prior history linkage");
+
+    const fgvCandidate = (await db.query<{ id: string }>("insert into source_candidates(url,domain) values('https://conhecimento.fgv.br/concursos/fixture','conhecimento.fgv.br') returning id")).rows[0].id;
+    await db.query("update collector_sources set enabled=false,disabled_reason='Fixture controlled disable',disabled_by=$1,disabled_at=now(),failure_count=4,last_status='FAILED' where name='FGV'", [actor]);
+    await db.query("select ops_apply_action($1,'APPROVE_SOURCE',$2,'Reviewed FGV contest page','https://conhecimento.fgv.br/concursos/fixture')", [actor, fgvCandidate]);
+    assert.equal((await db.query<{ enabled: boolean }>("select enabled from collector_sources where name='FGV'")).rows[0].enabled, false, "approval defaults to no activation");
+    const initialReview = (await db.query<{ reviewed_at: string; review_notes: string }>("select reviewed_at,review_notes from source_candidates where id=$1", [fgvCandidate])).rows[0];
+    await db.query("select ops_approve_source($1,$2,'Explicit known adapter activation','https://conhecimento.fgv.br/concursos/fixture',true)", [actor, fgvCandidate]);
+    assert.deepEqual((await db.query<{ enabled: boolean; failure_count: number; health_status: string; disabled_reason: string | null }>("select enabled,failure_count,health_status,disabled_reason from collector_sources where name='FGV'")).rows[0], { enabled: true, failure_count: 4, health_status: "DEGRADED", disabled_reason: null }, "activation preserves failure history");
+    assert.deepEqual((await db.query<{ reviewed_at: string; review_notes: string }>("select reviewed_at,review_notes from source_candidates where id=$1", [fgvCandidate])).rows[0], initialReview, "activation preserves original review");
+    const activeBefore = (await db.query("select name,base_url,adapter,tier,source_type,enabled,failure_count,health_status,last_status from collector_sources where name='FGV'")).rows[0];
+    await db.query("select ops_apply_action($1,'APPROVE_SOURCE',$2,'Repeat approval preserves active source','https://conhecimento.fgv.br/concursos/fixture')", [actor, fgvCandidate]);
+    assert.deepEqual((await db.query("select name,base_url,adapter,tier,source_type,enabled,failure_count,health_status,last_status from collector_sources where name='FGV'")).rows[0], activeBefore);
+    const wrong = (await db.query<{ id: string }>("insert into source_candidates(url,domain) values('https://www.cebraspe.org.br/concursos/fixture','www.cebraspe.org.br') returning id")).rows[0].id;
+    await db.query("update collector_sources set adapter='not-compiled' where name='Cebraspe'");
+    const auditBefore = (await db.query<{ count: number }>("select count(*)::int count from ops_action_log")).rows[0].count;
+    await assert.rejects(db.query("select ops_approve_source($1,$2,'Explicit but mismatched identity','https://www.cebraspe.org.br/concursos/fixture',true)", [actor, wrong]), /OPS_SOURCE_IDENTITY_MISMATCH/);
+    assert.equal((await db.query<{ status: string }>("select status from source_candidates where id=$1", [wrong])).rows[0].status, "CANDIDATE", "mismatch rolls back candidate approval");
+    assert.equal((await db.query<{ count: number }>("select count(*)::int count from ops_action_log")).rows[0].count, auditBefore);
+    const linkedAudit = (await db.query<{ source_id: string; result: string }>("select details->>'source_id' source_id,details->>'result' result from ops_action_log where target_id=$1 order by created_at,id", [candidate])).rows;
+    assert.ok(linkedAudit.every((row) => row.source_id === registered.id && row.result === "REGISTERED_DISABLED"));
+    console.log("Sprint 2.6 PostgreSQL RBAC, complete source registration, explicit allowlisted activation, rollback, durable history and conflict review passed");
   } finally { await db.close(); }
 }
 main().catch((error) => { console.error(error); process.exitCode = 1; });

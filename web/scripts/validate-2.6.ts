@@ -18,8 +18,11 @@ assert.equal(canRetryFailedDocument({ status: "FAILED", ai_last_error_code: "MAX
 assert.equal(canRetryFailedDocument({ status: "FAILED", ai_last_error_code: "INSUFFICIENT_IDENTITY" }), false);
 const page = readFileSync("src/app/admin/operacoes/page.tsx", "utf8");
 const api = readFileSync("src/app/api/admin/operations/route.ts", "utf8");
+const authorization = readFileSync("src/lib/admin/authorize.ts", "utf8");
 for (const label of ["Saúde do coletor", "IA pendente", "Documentos falhos", "Concursos em conflito", "Duplicatas candidatas", "Esquemas inválidos", "Orçamento de IA", "Execuções recentes", "Falhas de fontes", "Falhas recentes de IA", "Atualizar dados"]) assert.ok(page.includes(label), `${label} must be visible in the admin panel`);
-for (const field of ["ai_next_attempt_at", "ai_invalid_schema", "ops_admin_members", "ops_action_log", "aiFailureCount7d", '.eq("success", false)']) assert.ok(api.includes(field), `${field} must be queried only through admin API`);
+for (const field of ["ai_next_attempt_at", "ai_invalid_schema", "ops_admin_members", "ops_action_log", "aiFailureCount7d", '.eq("success", false)']) assert.ok((api + authorization).includes(field), `${field} must be queried only through admin API`);
+assert.equal(validateOperationAction({ action: "RETRY_DOCUMENT", targetId: id, activateKnownAdapter: false }), null);
+assert.equal(validateOperationAction({ action: "APPROVE_SOURCE", targetId: id, officialUrl: "https://127.0.0.2/", note: "Reviewed official site" }), null);
 console.log("Sprint 2.6 strict operational action validation passed");
 
 async function verifyUnauthenticated() {

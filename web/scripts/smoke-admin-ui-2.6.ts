@@ -33,7 +33,10 @@ async function main() {
       window.localStorage.setItem(storageKey, JSON.stringify(activeSession));
     }, { storageKey: `sb-${projectRef}-auth-token`, activeSession: session });
     const page = await context.newPage();
-    const apiResponse = page.waitForResponse((response) => response.url() === `${productionUrl}/api/admin/operations` && response.request().method() === "GET");
+    const apiResponse = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return url.origin === new URL(productionUrl).origin && url.pathname === "/api/admin/operations" && response.request().method() === "GET";
+    });
     const navigation = await page.goto(`${productionUrl}/admin/operacoes`, { waitUntil: "domcontentloaded" });
     assert.equal(navigation?.status(), 200, "admin page did not load");
     assert.equal((await apiResponse).status(), 200, "authenticated browser API request failed");

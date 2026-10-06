@@ -6,6 +6,7 @@ export const OperationActionSchema = z.object({
   targetId: z.uuid(),
   note: z.string().trim().max(2000).optional(),
   officialUrl: z.url().max(2048).optional(),
+  activateKnownAdapter: z.boolean().optional(),
 }).strict();
 
 export type OperationAction = z.infer<typeof OperationActionSchema>;
@@ -30,7 +31,8 @@ export function validateOperationAction(input: unknown): OperationAction | null 
   if (action.action === "APPROVE_SOURCE") {
     if (!action.officialUrl || !isSafeUrl(action.officialUrl)) return null;
     const url = new URL(action.officialUrl);
-    if (url.protocol !== "https:" || url.port || url.hash) return null;
-  } else if (action.officialUrl) return null;
+    if (url.protocol !== "https:" || url.port || url.hash || !url.hostname.includes(".") || /^[\d.]+$/.test(url.hostname) || url.hostname.endsWith(".localhost")) return null;
+    action.officialUrl = url.href;
+  } else if (action.officialUrl || action.activateKnownAdapter !== undefined) return null;
   return action;
 }
