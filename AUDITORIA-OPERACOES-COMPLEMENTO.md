@@ -1,6 +1,6 @@
 # Complemento operacional — fontes e conflitos
 
-Estado: implementação e migração validadas; CI, publicação e smoke da interface nova pendentes.
+Estado: implementação, migração, CI, publicação e smoke público validados; smoke autenticado dos novos fluxos ainda pendente.
 
 A sincronização de `main` incorporou os commits até `7b70f44e2b2cc8765d2322a7b0ec35e4a3172a52`, incluindo a restrição de retry da Sprint 2.6 e a observabilidade da Sprint 2.7. O fechamento anteriormente registrado nessas auditorias é histórico; este complemento valida dois fluxos que ainda exigiam consulta ou inserção manual no banco.
 
@@ -27,6 +27,14 @@ Snapshots em transação somente de leitura antes e depois confirmaram 10 fontes
 
 A credencial REST dos arquivos locais recebeu 401; a verificação remota usou o CLI já autenticado no projeto vinculado. Nenhuma credencial foi revelada, atualizada ou substituída. O health do deployment anterior respondeu `ok: true`, `status: degraded`; isso não comprova o deployment dos novos fluxos.
 
-Pendências: CI do commit integrado, deployment, smoke público e validação autenticada da interface nova. Não reutilizar smokes anteriores para afirmar esses gates.
+O commit `6361cc825cf32384a2e5be88f763b8624dd1f569` foi enviado a `origin/main`. GitHub Actions [37397206256](https://github.com/will071988/simulaai/actions/runs/37397206256) terminou com sucesso, incluindo as suítes anteriores e os checks das Sprints 2.6 e 2.7. Vercel `dpl_CcJ5XzxkZ9h7AK6k6fdv9oEg8Bio`: Production Ready; URL imutável `https://simulaai-7pwdd3fon-williamrocha6-5180s-projects.vercel.app`, alias `https://simulaai-kappa.vercel.app`.
+
+No alias publicado, o painel respondeu 200; GET e POST de operações e GET do novo detalhe privado sem token responderam 401 `AUTH_REQUIRED`. O health respondeu `ok: true`, `status: degraded`. A consulta dos logs de erro no intervalo da última hora não encontrou registros. Isso comprova publicação e negação anônima, sem afirmar leitura privada autenticada.
+
+O teste `test:2.6:ui-fixture` executou o cliente do build em servidor loopback e contexto headless isolado, com respostas de fixture e rede externa bloqueada. Comprovou aprovação com destino visível, ausência de ativação para domínio desconhecido, ativação explícita de conhecido, mensagem de incompatibilidade, leitura de evidências e nota anterior, paginação independente e recarga da nota salva. Lint e TypeScript do teste passaram. A captura visual foi inspecionada; nenhum perfil pessoal de Chrome, usuário real ou banco de produção foi usado.
+
+Para repetir o fixture: servir o build com `npm run start -- --hostname 127.0.0.1 --port 3026`, definir `BROWSER_EXECUTABLE_PATH` para o Chrome instalado e executar `npm run test:2.6:ui-fixture`. `OPS_UI_FIXTURE_URL` pode selecionar outra porta em `127.0.0.1`; qualquer host externo é recusado. O teste fecha seu contexto e navegador ao terminar; o servidor local desta verificação também foi encerrado.
+
+O usuário interrompeu o controle do Chrome com Esc antes da verificação autenticada. Esse controle permaneceu interrompido. Pendência: validar os novos fluxos com sessão admin autorizada no deployment publicado. O fixture local não substitui esse gate; não iniciar a Sprint 2.8 antes de fechar essa validação.
 
 As mudanças anteriores à sincronização foram preservadas em um stash nomeado `Sprint 2.6 source and conflict completion before syncing main`, mantido como recuperação adicional.
