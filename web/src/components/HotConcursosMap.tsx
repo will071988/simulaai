@@ -1,4 +1,5 @@
 "use client";
+import "leaflet/dist/leaflet.css";
 import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -54,7 +55,7 @@ export function HotConcursosMap() {
 
   const filtered = data.filter((d) => filter === "Todos" || d.scope === filter);
 
-  if (!leafletReady) return <div className="h-[320px] rounded-[24px] bg-white/5 animate-pulse" />;
+  if (!leafletReady) return <div aria-label="Carregando mapa" className="h-[320px] rounded-[24px] bg-white/5" />;
 
   return (
     <div>

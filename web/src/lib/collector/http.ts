@@ -39,6 +39,7 @@ export function isPrivateIP(input: string): boolean {
 
 type LookupAll = (hostname: string) => Promise<{ address: string; family: number }[]>;
 const lookupAll: LookupAll = (hostname) => dns.lookup(hostname, { all: true });
+type SafeFetchOptions = { allowedTypes?: string[]; timeoutMs?: number; allowedOrigin?: string | string[]; lookup?: LookupAll; fetchImpl?: typeof fetch };
 
 export async function validateUrlWithDns(urlStr: string, lookup: LookupAll = lookupAll): Promise<{ safe: boolean; error?: string }> {
   if (!isSafeUrl(urlStr)) return { safe: false, error: "SSRF_BLOCKED" };
@@ -52,13 +53,17 @@ export async function validateUrlWithDns(urlStr: string, lookup: LookupAll = loo
   }
 }
 
-export function matchesAllowedOrigin(url: string, allowedOrigin?: string): boolean {
-  try { return !allowedOrigin || new URL(url).origin === new URL(allowedOrigin).origin; } catch { return false; }
+export function matchesAllowedOrigin(url: string, allowedOrigin?: string | string[]): boolean {
+  try {
+    if (!allowedOrigin) return true;
+    const origin = new URL(url).origin;
+    return (Array.isArray(allowedOrigin) ? allowedOrigin : [allowedOrigin]).some((allowed) => origin === new URL(allowed).origin);
+  } catch { return false; }
 }
 
-export async function safeFetch(url: string, opts?: { allowedTypes?: string[]; timeoutMs?: number; allowedOrigin?: string }): Promise<{ ok: boolean; status: number; text?: string; buffer?: Buffer; contentType?: string; error?: string }> {
+export async function safeFetch(url: string, opts?: SafeFetchOptions): Promise<{ ok: boolean; status: number; text?: string; buffer?: Buffer; contentType?: string; error?: string }> {
   if (!matchesAllowedOrigin(url, opts?.allowedOrigin)) return { ok: false, status: 0, error: "SOURCE_ORIGIN_MISMATCH" };
-  const initialValidation = await validateUrlWithDns(url);
+  const initialValidation = await validateUrlWithDns(url, opts?.lookup || lookupAll);
   if (!initialValidation.safe) return { ok: false, status: 0, error: initialValidation.error };
   let currentUrl = url;
   let redirects = 0;
@@ -68,7 +73,7 @@ export async function safeFetch(url: string, opts?: { allowedTypes?: string[]; t
     try {
       // Residual TOCTOU risk: Node fetch does not expose socket pinning to the validated DNS result.
       // We fail closed on DNS errors/private answers and repeat validation for every redirect.
-      const res = await fetch(currentUrl, {
+      const res = await (opts?.fetchImpl || fetch)(currentUrl, {
         headers: { "User-Agent": "SimulaAi-Collector/1.0 (+https://simulaai-kappa.vercel.app)", Accept: "text/html,application/pdf,*/*" },
         signal: controller.signal,
         redirect: "manual",
@@ -79,7 +84,7 @@ export async function safeFetch(url: string, opts?: { allowedTypes?: string[]; t
         const nextUrl = new URL(loc, currentUrl).toString();
         await res.body?.cancel();
         if (!matchesAllowedOrigin(nextUrl, opts?.allowedOrigin)) return { ok: false, status: 0, error: "SOURCE_ORIGIN_MISMATCH" };
-        const redirectValidation = await validateUrlWithDns(nextUrl);
+        const redirectValidation = await validateUrlWithDns(nextUrl, opts?.lookup || lookupAll);
         if (!redirectValidation.safe) return { ok: false, status: 0, error: redirectValidation.error === "SSRF_DNS_VALIDATION_FAILED" ? redirectValidation.error : "SSRF_BLOCKED_REDIRECT" };
         currentUrl = nextUrl;
         redirects++;

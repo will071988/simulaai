@@ -20,13 +20,13 @@ export const getContestPageData = cache(async (requestedId: string): Promise<Con
   const svc = supabaseService();
   const resolved = await resolveRequestedContest(svc, requestedId);
   if (!resolved) return null;
-  const contestResult = await svc.from("concursos").select("id,titulo,orgao,banca,vagas,salario,inscricao_inicio,inscricao_fim,prova_data,cargos,escolaridade,status,scope,state_code,city,latitude,longitude,location_label,quality_status,edital_url,edital_number,official_source,updated_at,is_publishable,simulados(slug)").eq("id", resolved.canonicalId).maybeSingle();
-  if (contestResult.error) throw new Error("CONTEST_PAGE_QUERY_FAILED");
-  if (!contestResult.data?.is_publishable) return null;
-  const [evidenceResult, documentsResult] = await Promise.all([
+  const [contestResult, evidenceResult, documentsResult] = await Promise.all([
+    svc.from("concursos").select("id,titulo,orgao,banca,vagas,salario,inscricao_inicio,inscricao_fim,prova_data,cargos,escolaridade,status,scope,state_code,city,latitude,longitude,location_label,quality_status,edital_url,edital_number,official_source,updated_at,is_publishable,simulados(slug)").eq("id", resolved.canonicalId).not("simulados.slug", "is", null).order("created_at", { referencedTable: "simulados", ascending: true }).limit(1, { referencedTable: "simulados" }).maybeSingle(),
     svc.from("concurso_field_evidence").select("field_name,value_json,source_url,source_name,source_tier,evidence_text,confidence,observed_at").eq("concurso_id", resolved.canonicalId).is("invalidation_reason", null).order("observed_at", { ascending: false }).limit(100),
     svc.from("concurso_documents").select("document_type,relationship_type,source_url,source_name,published_at,observed_at,is_current").eq("concurso_id", resolved.canonicalId).order("observed_at", { ascending: false }).limit(100),
   ]);
+  if (contestResult.error) throw new Error("CONTEST_PAGE_QUERY_FAILED");
+  if (!contestResult.data?.is_publishable) return null;
   if (evidenceResult.error || documentsResult.error) throw new Error("CONTEST_PAGE_PROVENANCE_QUERY_FAILED");
   const { simulados, is_publishable: _isPublishable, ...contest } = contestResult.data;
   void _isPublishable;

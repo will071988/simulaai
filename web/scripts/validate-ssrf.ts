@@ -17,6 +17,32 @@ async function main() {
   assert.equal(redirectPrivate.safe, false);
   const localhost = await validateUrlWithDns("http://localhost", async () => [{ address: "127.0.0.1", family: 4 }]);
   assert.equal(localhost.safe, false);
+  for (const url of ["http://127.0.0.1", "http://[::1]", "http://10.0.0.1", "http://172.16.0.1", "http://192.168.0.1"]) {
+    assert.equal((await validateUrlWithDns(url, async () => [{ address: new URL(url).hostname.replace(/^\[|\]$/g, ""), family: url.includes(":") ? 6 : 4 }])).safe, false, url);
+  }
+
+  const publicLookup = async () => [{ address: "1.1.1.1", family: 4 }];
+  const allowedRedirect = await safeFetch("https://official.example/start", {
+    allowedOrigin: "https://official.example",
+    allowedTypes: ["text/plain"],
+    lookup: publicLookup,
+    fetchImpl: async (input) => String(input).endsWith("/start")
+      ? new Response(null, { status: 302, headers: { location: "/final" } })
+      : new Response("official", { status: 200, headers: { "content-type": "text/plain" } }),
+  });
+  assert.equal(allowedRedirect.ok, true, "same-origin redirect must remain allowed");
+  const externalRedirect = await safeFetch("https://official.example/start", {
+    allowedOrigin: "https://official.example",
+    lookup: publicLookup,
+    fetchImpl: async () => new Response(null, { status: 302, headers: { location: "https://evil.example/file.pdf" } }),
+  });
+  assert.equal(externalRedirect.error, "SOURCE_ORIGIN_MISMATCH", "external redirect must be blocked");
+  const privateDns = await safeFetch("https://official.example/file.pdf", {
+    allowedOrigin: "https://official.example",
+    lookup: async () => [{ address: "10.0.0.9", family: 4 }],
+    fetchImpl: async () => { throw new Error("fetch must not run after private DNS"); },
+  });
+  assert.equal(privateDns.error, "SSRF_BLOCKED", "private DNS answer must be blocked");
   console.log("ssrf validation passed");
 }
 main();

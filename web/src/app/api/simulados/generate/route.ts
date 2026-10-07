@@ -23,9 +23,11 @@ async function loadPublishedQuestions() {
   const questions = (data || []) as QuestionRow[];
   const contestIds = [...new Set(questions.flatMap((row) => row.concurso_id ? [row.concurso_id] : []))];
   if (!contestIds.length) return { questions, contests: [] as ContestRow[] };
-  const result = await svc.from("concursos").select("id,titulo,orgao,banca,escolaridade").in("id", contestIds);
+  const result = await svc.from("concursos").select("id,titulo,orgao,banca,escolaridade").in("id", contestIds).eq("is_publishable", true).is("merged_into_id", null);
   if (result.error) throw new Error("CONTESTS_QUERY_FAILED");
-  return { questions, contests: (result.data || []) as ContestRow[] };
+  const contests = (result.data || []) as ContestRow[];
+  const publicContestIds = new Set(contests.map((contest) => contest.id));
+  return { questions: questions.filter((question) => !question.concurso_id || publicContestIds.has(question.concurso_id)), contests };
 }
 
 async function handleGET(_request: Request) {

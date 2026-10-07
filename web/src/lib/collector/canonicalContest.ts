@@ -48,7 +48,7 @@ export async function resolveRequestedContest(svc: SupabaseClient, requestedId: 
   const { data: requested, error: requestedError } = await svc.from("concursos").select("id,merged_into_id").eq("id", requestedId).maybeSingle();
   if (requestedError) throw new Error(`load requested contest: ${requestedError.message}`);
   if (!requested) return null;
-  const canonicalId = await resolveCanonicalContestId(svc, requestedId);
+  const canonicalId = requested.merged_into_id ? await resolveCanonicalContestId(svc, requested.merged_into_id) : requestedId;
   return {
     requestedId,
     canonicalId,

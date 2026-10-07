@@ -59,10 +59,9 @@ function rank(seed: string, id: string) {
 }
 
 function deterministicOrder(candidates: QuestionCandidate[], seed: string, excluded: Set<string>) {
-  return [...candidates].sort((left, right) => {
-    const repeatDelta = Number(excluded.has(left.id)) - Number(excluded.has(right.id));
-    return repeatDelta || rank(seed, left.id).localeCompare(rank(seed, right.id));
-  });
+  return candidates.map((candidate) => ({ candidate, excluded: excluded.has(candidate.id), rank: rank(seed, candidate.id) }))
+    .sort((left, right) => Number(left.excluded) - Number(right.excluded) || left.rank.localeCompare(right.rank))
+    .map(({ candidate }) => candidate);
 }
 
 export function selectQuestions(candidates: QuestionCandidate[], input: GenerateSimuladoInput): QuestionCandidate[] {

@@ -120,7 +120,7 @@ export async function runCollector(externalRunId?: string): Promise<{ runId: str
           recordStage(stageResult("fetch", fetchStarted, { status: "FAILED", source: doc.sourceName, documentId: existing?.id, errorCode: robots.status }));
           continue;
         }
-        const fetched = await safeFetch(doc.canonicalUrl, { allowedTypes: ["text/html", "application/pdf"], allowedOrigin: adapter.baseUrl });
+        const fetched = await safeFetch(doc.canonicalUrl, { allowedTypes: ["text/html", "application/pdf"], allowedOrigin: adapter.documentOrigins || adapter.baseUrl });
         if (!fetched.ok) { metrics.errors_count++; recordStage(stageResult("fetch", fetchStarted, { status: "FAILED", source: doc.sourceName, documentId: existing?.id, errorCode: fetched.error || `HTTP_${fetched.status}` })); continue; }
         recordStage(stageResult("fetch", fetchStarted, { status: "SUCCESS", source: doc.sourceName, documentId: existing?.id }));
         const parseStarted = Date.now();
@@ -138,7 +138,8 @@ export async function runCollector(externalRunId?: string): Promise<{ runId: str
             contentHash = binaryHash;
             textHash = null;
             if (existing && existing.content_hash === contentHash) { metrics.documents_unchanged++; continue; }
-            const metadata = { source_name: doc.sourceName, tier: doc.tier, document_type: "EDITAL_PDF", pdf_status: pdfRes.status };
+            const failedDocumentType = doc.documentType === "PDF_GABARITO" ? "PDF_GABARITO" : "EDITAL_PDF";
+            const metadata = { source_name: doc.sourceName, tier: doc.tier, document_type: failedDocumentType, pdf_status: pdfRes.status };
             if (existing) {
               const { error: versionError } = await svc.from("collector_document_versions").upsert({ document_id: existing.id, content_hash: existing.content_hash, raw_text: existing.raw_text, metadata: existing.metadata }, { onConflict: "document_id,content_hash", ignoreDuplicates: true });
               if (versionError) throw new Error("DOCUMENT_VERSION_WRITE_FAILED");
@@ -146,13 +147,13 @@ export async function runCollector(externalRunId?: string): Promise<{ runId: str
               if (updErr) metrics.errors_count++; else metrics.documents_updated++;
             } else {
               const sourceId = sourceMap.get(doc.sourceName)?.id;
-              const { error: insErr } = await svc.from("collector_documents").insert({ source_id: sourceId, source_url: doc.sourceUrl, canonical_url: doc.canonicalUrl, document_type: "EDITAL_PDF", title: doc.title, content_hash: contentHash, binary_hash: binaryHash, text_hash: textHash, raw_text: "", status: "FAILED", metadata });
+              const { error: insErr } = await svc.from("collector_documents").insert({ source_id: sourceId, source_url: doc.sourceUrl, canonical_url: doc.canonicalUrl, document_type: failedDocumentType, title: doc.title, content_hash: contentHash, binary_hash: binaryHash, text_hash: textHash, raw_text: "", status: "FAILED", metadata });
               if (insErr) metrics.errors_count++; else metrics.documents_new++;
             }
             continue;
           }
           raw = pdfRes.text;
-          docType = "EDITAL_PDF";
+          docType = doc.documentType === "PDF_GABARITO" ? "PDF_GABARITO" : "EDITAL_PDF";
           textHash = hashContent(raw);
           contentHash = textHash;
         } else {

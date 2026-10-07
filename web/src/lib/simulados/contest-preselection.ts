@@ -4,6 +4,8 @@ type AvailableContest = { id: string; questionCount: number };
 export async function resolveContestPreselection(requested: string | undefined, available: AvailableContest[], request: typeof fetch = fetch, signal?: AbortSignal) {
   if (requested === undefined) return { concursoId: "", message: "" };
   if (!isContestId(requested)) return { concursoId: "", message: "O link contém um concurso inválido. Selecione um concurso abaixo." };
+  const direct = available.find((contest) => contest.id === requested && contest.questionCount > 0);
+  if (direct) return { concursoId: direct.id, message: "Concurso selecionado a partir da página de origem." };
   const response = await request(`/api/concursos/${encodeURIComponent(requested)}`, { cache: "no-store", signal });
   if (response.status === 404) return { concursoId: "", message: "Este concurso não está disponível. Selecione outro concurso abaixo." };
   if (!response.ok) throw new Error("CONTEST_PRESELECTION_FAILED");

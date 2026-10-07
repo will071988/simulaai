@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { supabase } from "@/lib/supabase";
 import { resolveContestPreselection } from "@/lib/simulados/contest-preselection";
 
 type ContestOption = { id: string; titulo: string; orgao: string; banca: string | null; questionCount: number };
@@ -75,6 +74,7 @@ export function SimuladoGenerator({ requestedContestId }: { requestedContestId?:
     try {
       const recent = JSON.parse(localStorage.getItem("simulaai-recent-question-ids") || "[]") as string[];
       const body = Object.fromEntries(Object.entries({ ...form, quantidade: Number(form.quantidade), sessionId: browserSessionId(), excludeQuestionIds: recent.slice(-100) }).filter(([, value]) => value !== ""));
+      const { supabase } = await import("@/lib/supabase");
       const { data: auth } = await supabase.auth.getSession();
       const response = await fetch("/api/simulados/generate", { method: "POST", headers: { "content-type": "application/json", ...(auth.session ? { authorization: `Bearer ${auth.session.access_token}` } : {}) }, body: JSON.stringify(body) });
       const payload = await response.json();
