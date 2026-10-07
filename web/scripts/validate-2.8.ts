@@ -50,6 +50,9 @@ async function main() {
   const generateRoute = readFileSync("src/app/api/simulados/generate/route.ts", "utf8");
   assert.match(generateRoute, /publicContestIds\.has\(question\.concurso_id\)/, "questions from unpublished or merged contests must not be selectable");
 
+  const nextConfig = readFileSync("next.config.ts", "utf8");
+  assert.match(nextConfig, /serverExternalPackages:\s*\["pdf-parse"\]/, "pdf-parse must retain its Node runtime files in serverless deployments");
+
   console.log("Sprint 2.8 bounded payloads, parallel reads, strict cache policy and deferred client work passed");
 }
 
