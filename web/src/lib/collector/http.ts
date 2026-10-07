@@ -180,6 +180,7 @@ export function hashBuffer(buf: Buffer): string {
 export async function extractPdfText(buffer: Buffer): Promise<{ text: string; status: string }> {
   try {
     await import("@napi-rs/canvas");
+    await import("pdfjs-dist/legacy/build/pdf.worker.mjs");
     const { PDFParse } = await import("pdf-parse");
     const parser = new PDFParse({ data: new Uint8Array(buffer) });
     try {

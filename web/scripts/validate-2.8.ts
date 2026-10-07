@@ -54,7 +54,10 @@ async function main() {
   assert.match(nextConfig, /serverExternalPackages:\s*\["pdf-parse", "@napi-rs\/canvas"\]/, "PDF parsing dependencies must retain their Node runtime files in serverless deployments");
   const packageJson = JSON.parse(readFileSync("package.json", "utf8")) as { dependencies?: Record<string, string> };
   assert.ok(packageJson.dependencies?.["@napi-rs/canvas"], "pdfjs DOM primitives must be installed in the serverless runtime");
-  assert.match(readFileSync("src/lib/collector/http.ts", "utf8"), /await import\("@napi-rs\/canvas"\)/, "the native canvas runtime must be included in the collector function trace");
+  assert.ok(packageJson.dependencies?.["pdfjs-dist"], "the PDF worker must be installed in the serverless runtime");
+  const collectorHttp = readFileSync("src/lib/collector/http.ts", "utf8");
+  assert.match(collectorHttp, /await import\("@napi-rs\/canvas"\)/, "the native canvas runtime must be included in the collector function trace");
+  assert.match(collectorHttp, /await import\("pdfjs-dist\/legacy\/build\/pdf\.worker\.mjs"\)/, "the PDF worker must be included in the collector function trace");
 
   console.log("Sprint 2.8 bounded payloads, parallel reads, strict cache policy and deferred client work passed");
 }
