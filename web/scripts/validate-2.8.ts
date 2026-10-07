@@ -51,9 +51,10 @@ async function main() {
   assert.match(generateRoute, /publicContestIds\.has\(question\.concurso_id\)/, "questions from unpublished or merged contests must not be selectable");
 
   const nextConfig = readFileSync("next.config.ts", "utf8");
-  assert.match(nextConfig, /serverExternalPackages:\s*\["pdf-parse"\]/, "pdf-parse must retain its Node runtime files in serverless deployments");
+  assert.match(nextConfig, /serverExternalPackages:\s*\["pdf-parse", "@napi-rs\/canvas"\]/, "PDF parsing dependencies must retain their Node runtime files in serverless deployments");
   const packageJson = JSON.parse(readFileSync("package.json", "utf8")) as { dependencies?: Record<string, string> };
   assert.ok(packageJson.dependencies?.["@napi-rs/canvas"], "pdfjs DOM primitives must be installed in the serverless runtime");
+  assert.match(readFileSync("src/lib/collector/http.ts", "utf8"), /await import\("@napi-rs\/canvas"\)/, "the native canvas runtime must be included in the collector function trace");
 
   console.log("Sprint 2.8 bounded payloads, parallel reads, strict cache policy and deferred client work passed");
 }
