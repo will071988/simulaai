@@ -52,6 +52,8 @@ async function main() {
 
   const nextConfig = readFileSync("next.config.ts", "utf8");
   assert.match(nextConfig, /serverExternalPackages:\s*\["pdf-parse"\]/, "pdf-parse must retain its Node runtime files in serverless deployments");
+  const packageJson = JSON.parse(readFileSync("package.json", "utf8")) as { dependencies?: Record<string, string> };
+  assert.ok(packageJson.dependencies?.["@napi-rs/canvas"], "pdfjs DOM primitives must be installed in the serverless runtime");
 
   console.log("Sprint 2.8 bounded payloads, parallel reads, strict cache policy and deferred client work passed");
 }
