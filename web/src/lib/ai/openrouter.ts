@@ -4,6 +4,7 @@ import { CircuitBreaker } from "./provider";
 import { generationFetch, type GenerationPermit } from "./generationBudget";
 import { isProviderModelAllowed } from "./config";
 import { httpError, providerError } from "./structured";
+import { validateLiveFreeModel } from "./openrouterModels";
 
 const URL = "https://openrouter.ai/api/v1/chat/completions";
 
@@ -37,10 +38,13 @@ export class OpenRouterProvider implements AIProvider {
     return { healthy: true };
   }
   async generate<T>(req: AIRequest, permit?: GenerationPermit): Promise<AIResult<T>> {
-    const start = Date.now();
+    let start = Date.now();
     if (!process.env.OPENROUTER_API_KEY) return { ok: false, provider: this.name, model: this.model, latencyMs: Date.now() - start, errorCode: "SKIPPED_NOT_CONFIGURED" };
     if (!isProviderModelAllowed(this.name, this.model)) return { ok: false, provider: this.name, model: this.model, latencyMs: 0, errorCode: "AUTH_CONFIGURATION_ERROR" };
     if (this.cb.isOpen()) return { ok: false, provider: this.name, model: this.model, latencyMs: Date.now() - start, errorCode: "CIRCUIT_OPEN" };
+    const approval = await validateLiveFreeModel(this.model);
+    if (!approval.ok) return { ok: false, provider: this.name, model: this.model, effectiveModel: "MODEL_EFFECTIVE_UNKNOWN", latencyMs: Date.now() - start, errorCode: approval.errorCode };
+    start = Date.now();
     let httpStatus: number | undefined;
     let effectiveModel = "MODEL_EFFECTIVE_UNKNOWN";
     try {
@@ -54,6 +58,7 @@ export class OpenRouterProvider implements AIProvider {
             { role: "user", content: req.prompt + (req.schema ? "\nSCHEMA:\n" + JSON.stringify(req.schema) : "") + "\n\nINPUT:\n" + JSON.stringify(req.input).slice(0, 8000) },
           ],
           response_format: { type: "json_object" },
+          provider: { max_price: { prompt: 0, completion: 0 }, require_parameters: true, allow_fallbacks: false },
           max_tokens: req.maxTokens || 1200,
           temperature: 0.2,
         }),
@@ -63,16 +68,16 @@ export class OpenRouterProvider implements AIProvider {
         await res.body?.cancel();
         if (res.status === 429) return { ok: false, provider: this.name, model: this.model, effectiveModel, httpStatus, latencyMs: Date.now() - start, errorCode: "429" };
         this.cb.recordFailure();
-        return { ok: false, provider: this.name, model: this.model, effectiveModel, httpStatus, latencyMs: Date.now() - start, errorCode: httpError(res.status), ...(res.status === 408 || res.status === 504 ? { timeoutSource: "OPENROUTER_OR_UPSTREAM" as const } : {}) };
+        return { ok: false, provider: this.name, model: this.model, effectiveModel, httpStatus, latencyMs: Date.now() - start, errorCode: res.status === 404 ? "MODEL_UNAVAILABLE" : httpError(res.status), ...(res.status === 408 || res.status === 504 ? { timeoutSource: "OPENROUTER_OR_UPSTREAM" as const } : {}) };
       }
       const json = await res.json() as { model?: string; error?: unknown; choices?: { finish_reason?: string; message?: { content?: string } }[] };
       effectiveModel = typeof json.model === "string" ? json.model : "MODEL_EFFECTIVE_UNKNOWN";
       if (json.error) return { ok: false, provider: this.name, model: this.model, effectiveModel, httpStatus, latencyMs: Date.now() - start, errorCode: "PROVIDER_UNAVAILABLE", jsonClassification: "UPSTREAM_ERROR_WITH_200", parseSuccess: false };
       const raw = json.choices?.[0]?.message?.content || "";
       let data: T | undefined;
-      try { data = parseOpenRouterJson<T>(raw); } catch (error) { const invalidObject = error instanceof Error && error.message === "INVALID_JSON_OBJECT"; return { ok: false, provider: this.name, model: this.model, effectiveModel, httpStatus, latencyMs: Date.now() - start, errorCode: invalidObject ? "INVALID_SCHEMA" : !raw.trim() ? "EMPTY_BODY" : "INVALID_JSON", jsonClassification: invalidObject ? "SCHEMA_INVALID" : classifyInvalidJson(raw, json.choices?.[0]?.finish_reason), parseSuccess: invalidObject }; }
+      try { data = parseOpenRouterJson<T>(raw); } catch (error) { const invalidObject = error instanceof Error && error.message === "INVALID_JSON_OBJECT"; return { ok: false, provider: this.name, model: this.model, effectiveModel, httpStatus, latencyMs: Date.now() - start, bodyPresent: Boolean(raw.trim()), errorCode: invalidObject ? "INVALID_SCHEMA" : !raw.trim() ? "EMPTY_BODY" : "INVALID_JSON", jsonClassification: invalidObject ? "SCHEMA_INVALID" : classifyInvalidJson(raw, json.choices?.[0]?.finish_reason), parseSuccess: invalidObject }; }
       this.cb.recordSuccess();
-      return { ok: true, provider: this.name, model: this.model, effectiveModel, httpStatus, data, raw, parseSuccess: true, latencyMs: Date.now() - start };
+      return { ok: true, provider: this.name, model: this.model, effectiveModel, httpStatus, data, raw, bodyPresent: true, parseSuccess: true, latencyMs: Date.now() - start };
     } catch (e) {
       this.cb.recordFailure();
       return { ok: false, provider: this.name, model: this.model, effectiveModel, httpStatus, latencyMs: Date.now() - start, ...providerError(e), ...(e instanceof SyntaxError ? { jsonClassification: "OTHER", parseSuccess: false } : {}) };

@@ -23,6 +23,7 @@ export type AIResult<T> = {
   timeoutSource?: "CLIENT_ABORT_SIGNAL" | "NETWORK_TIMEOUT" | "OPENROUTER_OR_UPSTREAM";
   jsonClassification?: string;
   parseSuccess?: boolean;
+  bodyPresent?: boolean;
   success?: boolean;
   requestedModel?: string;
   attempts?: Array<{ provider: string; requestedModel: string; effectiveModel: string; errorCode?: string; latencyMs: number }>;

@@ -36,10 +36,11 @@ async function main() {
   process.env.OPENROUTER_API_KEY = "fixture-only";
   try {
     let calls = 0;
-    globalThis.fetch = async () => { calls++; return Response.json({ model: "effective-fixture", choices: [{ message: { content: '{"ok":true}' } }] }); };
+    const catalog = { data: [{ id: "openrouter/free", pricing: { prompt: "0", completion: "0" }, architecture: { input_modalities: ["text"], output_modalities: ["text"] }, supported_parameters: ["response_format"] }] };
+    globalThis.fetch = async (input) => { if (String(input).endsWith("/models")) return Response.json(catalog); calls++; return Response.json({ model: "effective-fixture", choices: [{ message: { content: '{"ok":true}' } }] }); };
     const success = await new OpenRouterProvider().generate({ taskType: "EXTRACT_CONCURSO", prompt: "fixture", input: {}, promptVersion: "fixture" }, async () => true);
     assert.equal(calls, 1); assert.equal(success.effectiveModel, "effective-fixture"); assert.equal(success.httpStatus, 200);
-    globalThis.fetch = async () => { throw new DOMException("timeout", "TimeoutError"); };
+    globalThis.fetch = async (input) => { if (String(input).endsWith("/models")) return Response.json(catalog); throw new DOMException("timeout", "TimeoutError"); };
     const timeout = await new OpenRouterProvider().generate({ taskType: "EXTRACT_CONCURSO", prompt: "fixture", input: {}, promptVersion: "fixture" }, async () => true);
     assert.equal(timeout.errorCode, "TIMEOUT"); assert.equal(timeout.timeoutSource, "CLIENT_ABORT_SIGNAL");
   } finally { globalThis.fetch = oldFetch; if (oldKey === undefined) delete process.env.OPENROUTER_API_KEY; else process.env.OPENROUTER_API_KEY = oldKey; }

@@ -28,15 +28,22 @@ async function invoke(path: string, healthyProviders?: string[]) {
 async function main() {
   const beforeSmoke = await snapshot();
   assert.equal(beforeSmoke.claims, 0, "active claims: stop without modification");
-  const smoke = await invoke("/api/collector/provider-smoke");
-  const afterSmoke = await snapshot();
-  console.log(JSON.stringify({ stage: "providerSmoke", result: smoke, reservationsDelta: afterSmoke.reserved - beforeSmoke.reserved, usageDelta: afterSmoke.calls - beforeSmoke.calls, pending: afterSmoke.pending, claims: afterSmoke.claims }, null, 2));
-  assert.ok(smoke.physicalCalls >= 1 && smoke.physicalCalls <= 4, "at most one smoke per configured provider");
-  assert.equal(afterSmoke.reserved - beforeSmoke.reserved, smoke.physicalCalls);
-  assert.equal(afterSmoke.calls - beforeSmoke.calls, smoke.physicalCalls);
-  assert.ok(smoke.results.every((result: { physicalCalls: number }) => result.physicalCalls <= 1));
-  assert.equal(smoke.ok, true, "PROVIDER_SMOKE_FAILED: worker execution prohibited");
-  const healthyProviders = smoke.results.filter((result: { result: string }) => result.result === "HEALTHY").map((result: { provider: string }) => result.provider);
+  let afterSmoke = beforeSmoke;
+  let healthyProviders: string[];
+  if (process.env.OPENROUTER_MATRIX_APPROVED === "true") {
+    assert.ok(process.env.AI_OPENROUTER_MODEL_ORDER, "validated model order unavailable");
+    healthyProviders = ["openrouter"];
+  } else {
+    const smoke = await invoke("/api/collector/provider-smoke");
+    afterSmoke = await snapshot();
+    console.log(JSON.stringify({ stage: "providerSmoke", result: smoke, reservationsDelta: afterSmoke.reserved - beforeSmoke.reserved, usageDelta: afterSmoke.calls - beforeSmoke.calls, pending: afterSmoke.pending, claims: afterSmoke.claims }, null, 2));
+    assert.ok(smoke.physicalCalls >= 1 && smoke.physicalCalls <= 4, "at most one smoke per configured provider");
+    assert.equal(afterSmoke.reserved - beforeSmoke.reserved, smoke.physicalCalls);
+    assert.equal(afterSmoke.calls - beforeSmoke.calls, smoke.physicalCalls);
+    assert.ok(smoke.results.every((result: { physicalCalls: number }) => result.physicalCalls <= 1));
+    assert.equal(smoke.ok, true, "PROVIDER_SMOKE_FAILED: worker execution prohibited");
+    healthyProviders = smoke.results.filter((result: { result: string }) => result.result === "HEALTHY").map((result: { provider: string }) => result.provider);
+  }
   console.log(JSON.stringify({ stage: "beforeSingle", pending: afterSmoke.pending, reserved: afterSmoke.reserved, documents: afterSmoke.docs.filter((d) => d.status === "AI_PENDING") }, null, 2));
   const single = await invoke("/api/collector/pending?limit=1", healthyProviders);
   const afterSingle = await snapshot();

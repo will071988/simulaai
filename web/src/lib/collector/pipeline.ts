@@ -198,7 +198,7 @@ export async function runCollector(externalRunId?: string): Promise<{ runId: str
         let extracted: ExtractConcurso | null = deterministicReady ? deterministicExtracted : null;
         const extractStarted = Date.now();
         if (needsAI && metrics.ai_requests < MAX_AI_PER_RUN) {
-          const aiRes = await extractConcursoWithAI(doc.title, raw, generationBudget);
+          const aiRes = await extractConcursoWithAI(doc.identityTitle || doc.title, raw, generationBudget, doc.sourceName);
           metrics.ai_requests = generationBudget.calls;
           if (aiRes.ok && aiRes.data) {
             const parsed = ExtractConcursoSchema.safeParse(aiRes.data);

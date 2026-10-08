@@ -1,6 +1,7 @@
 import type { AIProvider } from "./provider";
 import type { AIRequest, AIResult } from "./types";
-import { createProviders, providerConfigured } from "./registry";
+import { createProviders, providerConfigured, createOpenRouterModelProvider } from "./registry";
+import { configuredOpenRouterModels } from "./openrouterModels";
 import { supabaseService } from "@/lib/supabase-server";
 import crypto from "crypto";
 import { aiConfig, isProviderModelAllowed } from "./config";
@@ -30,11 +31,13 @@ async function setCached(inputHash: string, promptVersion: string, provider: str
   } catch { console.error(JSON.stringify({ event: "observability_write_failed", component: "ai_cache", code: "UNAVAILABLE" })); }
 }
 
-async function logUsage(provider: string, model: string, taskType: string, success: boolean, latencyMs: number, errorCode?: string, inputSize?: number, outputSize?: number) {
+async function logUsage(provider: string, model: string, taskType: string, success: boolean, latencyMs: number, errorCode?: string, inputSize?: number, outputSize?: number, effectiveModel?: string) {
   try {
     const svc = supabaseService();
-    const { error } = await svc.from("ai_usage_logs").insert({ provider, model, task_type: taskType, success, latency_ms: latencyMs, error_code: errorCode, input_size: inputSize, output_size: outputSize });
+    const id = crypto.randomUUID();
+    const { error } = await svc.from("ai_usage_logs").insert({ id, provider, model, task_type: taskType, success, latency_ms: latencyMs, error_code: errorCode, input_size: inputSize, output_size: outputSize });
     if (error) console.error(JSON.stringify({ event: "observability_write_failed", component: "ai_usage", code: "INSERT_FAILED" }));
+    else if (effectiveModel) console.info(JSON.stringify({ event: "ai_usage_model_identity", usageLogId: id, provider, requestedModel: model, effectiveModel, latencyMs, success, errorCode: errorCode || null }));
   } catch { console.error(JSON.stringify({ event: "observability_write_failed", component: "ai_usage", code: "UNAVAILABLE" })); }
 }
 
@@ -59,20 +62,22 @@ export type RouterDependencies = {
   modelAllowed: (model: string, provider?: string) => boolean;
   sleep: (ms: number) => Promise<void>;
   configured?: (name: string) => boolean;
+  openRouterModels?: () => string[];
+  modelProvider?: (model: string) => AIProvider;
 };
-const dependencies: RouterDependencies = { providers, getCached, setCached, logUsage, reserveBudget, order: aiConfig.providerOrder, modelAllowed: (model, provider) => isProviderModelAllowed(provider || "openrouter", model), configured: providerConfigured, sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)) };
+const dependencies: RouterDependencies = { providers, getCached, setCached, logUsage, reserveBudget, order: aiConfig.providerOrder, modelAllowed: (model, provider) => isProviderModelAllowed(provider || "openrouter", model), configured: providerConfigured, openRouterModels: configuredOpenRouterModels, modelProvider: createOpenRouterModelProvider, sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)) };
 
-export function smokeDependencies(provider: string): RouterDependencies {
-  return { ...dependencies, order: [provider], getCached: async () => null, setCached: async () => {} };
+export function smokeDependencies(provider: string, model?: string): RouterDependencies {
+  return { ...dependencies, order: [provider], ...(model ? { openRouterModels: () => [model] } : {}), getCached: async () => null, setCached: async () => {} };
 }
 
 type Execution = { providers: Record<string, AIProvider>; failures: Map<string, number>; health: Map<string, "healthy" | "degraded" | "unavailable"> };
 const executions = new WeakMap<GenerationBudget, Execution>();
 export function isFallbackError(code?: string): boolean {
-  return ["TIMEOUT", "EMPTY_BODY", "INVALID_JSON", "429", "HTTP_5XX", "PROVIDER_UNAVAILABLE"].includes(code || "") || /^HTTP_5\d\d$/.test(code || "");
+  return ["TIMEOUT", "EMPTY_BODY", "INVALID_JSON", "429", "HTTP_5XX", "PROVIDER_UNAVAILABLE", "MODEL_UNAVAILABLE"].includes(code || "") || /^HTTP_5\d\d$/.test(code || "");
 }
 
-export async function generateWithFallback<T>(req: AIRequest, opts?: { validate?: (d: unknown) => boolean; budget?: GenerationBudget }, deps: RouterDependencies = dependencies): Promise<AIResult<T> & { degraded?: boolean }> {
+export async function generateWithFallback<T>(req: AIRequest, opts?: { validate?: (d: unknown) => boolean; semanticValidate?: (d: unknown) => boolean; budget?: GenerationBudget }, deps: RouterDependencies = dependencies): Promise<AIResult<T> & { degraded?: boolean }> {
   try {
     if (!req.prompt?.trim() || !req.promptVersion || JSON.stringify(req.input) === undefined) throw new Error("INVALID_INPUT");
   } catch { return { ok: false, provider: "none", model: "", latencyMs: 0, errorCode: "INVALID_INPUT" }; }
@@ -80,7 +85,7 @@ export async function generateWithFallback<T>(req: AIRequest, opts?: { validate?
   if (process.env.AI_ENABLED === "false") return { ok: false, provider: "disabled", model: "", latencyMs: 0, errorCode: "AI_DISABLED", degraded: true };
   const inputHash = hashInput(req.input, req.promptVersion, req.taskType);
   const cached = await deps.getCached<T>(inputHash, req.promptVersion);
-  if (cached && (!opts?.validate || opts.validate(cached))) return { ok: true, success: true, provider: "cache", model: "cache", requestedModel: "cache", effectiveModel: "MODEL_EFFECTIVE_UNKNOWN", data: cached, latencyMs: 0, cached: true };
+  if (cached && (!opts?.validate || opts.validate(cached)) && (!opts?.semanticValidate || opts.semanticValidate(cached))) return { ok: true, success: true, provider: "cache", model: "cache", requestedModel: "cache", effectiveModel: "MODEL_EFFECTIVE_UNKNOWN", data: cached, latencyMs: 0, cached: true };
 
   const budget = opts?.budget || new GenerationBudget(aiConfig.maxPerRun);
   const ord = budget.providerOrder || deps.order;
@@ -88,29 +93,39 @@ export async function generateWithFallback<T>(req: AIRequest, opts?: { validate?
   if (!execution) { execution = { providers: deps.providers(), failures: new Map(), health: new Map() }; executions.set(budget, execution); }
   let last: AIResult<T> = { ok: false, provider: "all", model: "all", latencyMs: 0, errorCode: "SKIPPED_NOT_CONFIGURED" };
   const attempts: NonNullable<AIResult<T>["attempts"]> = [];
-  for (const name of [...new Set(ord)]) {
-    const p = execution.providers[name];
+  const targets = [...new Set(ord)].flatMap((name) => {
+    if (name !== "openrouter" || !deps.openRouterModels || !deps.modelProvider) return [{ name, key: name }];
+    return deps.openRouterModels().map((model) => {
+      const key = `${name}:${model}`;
+      execution.providers[key] ||= deps.modelProvider!(model);
+      return { name, key };
+    });
+  });
+  if (ord.includes("openrouter") && deps.openRouterModels && !deps.openRouterModels().length) return { ...last, errorCode: "AUTH_CONFIGURATION_ERROR", degraded: true };
+  for (const { name, key } of targets) {
+    const p = execution.providers[key];
     if (!p || (deps.configured && !deps.configured(name))) { execution.health.set(name, "unavailable"); continue; }
-    if ((execution.failures.get(name) || 0) >= 2) { last = { ok: false, provider: name, model: p.model, latencyMs: 0, errorCode: "PROVIDER_UNAVAILABLE" }; continue; }
+    if ((execution.failures.get(key) || 0) >= 2) { last = { ok: false, provider: name, model: p.model, latencyMs: 0, errorCode: "MODEL_UNAVAILABLE" }; continue; }
     if (!deps.modelAllowed(p.model, name)) return { ok: false, provider: name, model: p.model, latencyMs: 0, errorCode: "AUTH_CONFIGURATION_ERROR", attempts, degraded: true };
     if (!(await p.healthCheck()).healthy) { last = { ok: false, provider: name, model: p.model, latencyMs: 0, errorCode: "PROVIDER_UNAVAILABLE" }; execution.health.set(name, "unavailable"); continue; }
     if (budget.calls >= budget.limit) return { ...last, errorCode: "BUDGET_EXHAUSTED", attempts, degraded: true };
     const beforeCalls = budget.calls;
     const result = p.generateStructured ? await p.generateStructured<T>(req, () => budget.reserve(deps.reserveBudget)) : await p.generate<T>(req, () => budget.reserve(deps.reserveBudget));
     const invalidSchema = result.ok && opts?.validate && !opts.validate(result.data);
-    last = { ...result, ok: result.ok && !invalidSchema, success: result.ok && !invalidSchema, requestedModel: p.model, effectiveModel: result.effectiveModel || "MODEL_EFFECTIVE_UNKNOWN", ...(invalidSchema ? { errorCode: "INVALID_SCHEMA" } : result.errorCode === "BUDGET_EXCEEDED" ? { errorCode: "BUDGET_EXHAUSTED" } : {}) };
+    const semanticError = result.ok && !invalidSchema && opts?.semanticValidate && !opts.semanticValidate(result.data);
+    last = { ...result, ok: result.ok && !invalidSchema && !semanticError, success: result.ok && !invalidSchema && !semanticError, requestedModel: p.model, effectiveModel: result.effectiveModel || "MODEL_EFFECTIVE_UNKNOWN", ...(semanticError ? { errorCode: "SCHEMA_SEMANTIC_ERROR" } : invalidSchema ? { errorCode: "INVALID_SCHEMA" } : result.errorCode === "BUDGET_EXCEEDED" ? { errorCode: "BUDGET_EXHAUSTED" } : {}) };
     if (budget.calls > beforeCalls) {
       attempts.push({ provider: name, requestedModel: p.model, effectiveModel: last.effectiveModel!, latencyMs: last.latencyMs, errorCode: last.errorCode });
-      await deps.logUsage(p.name, p.model, req.taskType, last.ok, last.latencyMs, last.errorCode, JSON.stringify(req.input).length, result.raw?.length);
+      await deps.logUsage(p.name, p.model, req.taskType, last.ok, last.latencyMs, last.errorCode, JSON.stringify(req.input).length, result.raw?.length, last.effectiveModel);
       if (deps === dependencies) console.info(JSON.stringify({ event: "ai_provider_diagnostics", provider: p.name, requestedModel: p.model, effectiveModel: last.effectiveModel, httpStatus: result.httpStatus ?? null, latencyMs: last.latencyMs, timeoutSource: result.timeoutSource ?? null, jsonClassification: invalidSchema ? "SCHEMA_INVALID" : result.jsonClassification ?? null, errorCode: last.errorCode ?? null }));
     }
     if (last.ok) {
-      execution.failures.set(name, 0); execution.health.set(name, "healthy");
+      execution.failures.set(key, 0); execution.health.set(key, "healthy");
       await deps.setCached(inputHash, req.promptVersion, p.name, p.model, result.data);
       return { ...last, attempts };
     }
-    const failures = (execution.failures.get(name) || 0) + 1;
-    execution.failures.set(name, failures); execution.health.set(name, failures >= 2 ? "unavailable" : "degraded");
+    const failures = (execution.failures.get(key) || 0) + 1;
+    execution.failures.set(key, failures); execution.health.set(key, failures >= 2 ? "unavailable" : "degraded");
     if (!isFallbackError(last.errorCode)) return { ...last, attempts, degraded: true };
   }
   return { ...last, success: false, attempts, degraded: true };

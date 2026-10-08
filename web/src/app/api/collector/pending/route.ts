@@ -10,6 +10,7 @@ import { aiConfig } from "@/lib/ai/config";
 import { refreshOperationalAlerts } from "@/lib/observability/alerts";
 import { finishOperationalJob, observeApiRoute, startOperationalJob } from "@/lib/observability/operations";
 import { pendingLimit, pendingClaimArguments, pendingProviderOrder } from "@/lib/collector/pendingLimit";
+import { extractionSemanticIssues } from "@/lib/collector/extractionSemantics";
 
 async function handleGET(req: Request) {
   if (!isCronAuthorized(req)) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
@@ -70,11 +71,19 @@ async function handlePending(triggerType: "CRON" | "MANUAL", limit: 1 | 5, provi
         continue;
       }
       const deterministic = ExtractConcursoSchema.safeParse(meta.ai_extracted);
-      const res = deterministic.success ? null : await extractConcursoWithAI(d.title || "", d.raw_text || "", budget);
+      const identityTitle = typeof meta.identity_title === "string" ? meta.identity_title : d.title || "";
+      const sourceName = typeof meta.source_name === "string" ? meta.source_name : undefined;
+      const res = deterministic.success ? null : await extractConcursoWithAI(identityTitle, d.raw_text || "", budget, sourceName);
       if (deterministic.success || (res?.ok && res.data)) {
         const parsed = deterministic.success ? deterministic : ExtractConcursoSchema.safeParse(res?.data);
         if (!parsed.success) {
           await scheduleRetry(d, meta, "INVALID_SCHEMA");
+          continue;
+        }
+        const semanticIssues = extractionSemanticIssues(parsed.data, identityTitle, d.raw_text || "", sourceName);
+        if (semanticIssues.length) {
+          console.info(JSON.stringify({ event: "ai_extraction_semantic_rejection", issues: semanticIssues }));
+          await scheduleRetry(d, meta, "SCHEMA_SEMANTIC_ERROR");
           continue;
         }
         const syncErr = await (async () => {
