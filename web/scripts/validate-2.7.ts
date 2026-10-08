@@ -28,7 +28,7 @@ function routeFiles(directory: string): string[] {
   });
 }
 const routes = routeFiles("src/app/api");
-assert.equal(routes.length, 19);
+assert.equal(routes.length, 20);
 for (const route of routes) assert.match(readFileSync(route, "utf8"), /observeApiRoute\(/, `${route} must use bounded API instrumentation`);
 const health = readFileSync("src/app/api/health/route.ts", "utf8");
 for (const forbidden of ["SUPABASE_SERVICE_ROLE_KEY", "source_url", "error.message"]) assert.ok(!health.includes(forbidden), `public health must not expose ${forbidden}`);

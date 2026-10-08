@@ -14,6 +14,14 @@ export function parseOpenRouterJson<T>(raw: string): T {
   return parsed as T;
 }
 
+export function classifyInvalidJson(raw: string, finishReason?: string): string {
+  if (!raw.trim()) return "EMPTY_BODY";
+  if (finishReason === "length") return "TRUNCATED_JSON";
+  if (raw.trim().startsWith("```")) return "MARKDOWN_FENCE";
+  if (!/^[{[]/.test(raw.trim())) return "FREE_TEXT";
+  return "OTHER";
+}
+
 export class OpenRouterProvider implements AIProvider {
   name = "openrouter";
   model: string;
@@ -30,6 +38,8 @@ export class OpenRouterProvider implements AIProvider {
     const start = Date.now();
     if (!process.env.OPENROUTER_API_KEY) return { ok: false, provider: this.name, model: this.model, latencyMs: Date.now() - start, errorCode: "NO_API_KEY" };
     if (this.cb.isOpen()) return { ok: false, provider: this.name, model: this.model, latencyMs: Date.now() - start, errorCode: "CIRCUIT_OPEN" };
+    let httpStatus: number | undefined;
+    let effectiveModel = "MODEL_EFFECTIVE_UNKNOWN";
     try {
       const res = await generationFetch(URL, {
         method: "POST",
@@ -45,23 +55,30 @@ export class OpenRouterProvider implements AIProvider {
           temperature: 0.2,
         }),
       }, permit);
+      httpStatus = res.status;
       if (!res.ok) {
-        const txt = await res.text();
-        if (res.status === 429) return { ok: false, provider: this.name, model: this.model, latencyMs: Date.now() - start, errorCode: "429" };
-        if (txt.includes("not found")) return { ok: false, provider: this.name, model: this.model, latencyMs: Date.now() - start, errorCode: "MODEL_NOT_FOUND" };
+        await res.body?.cancel();
+        if (res.status === 429) return { ok: false, provider: this.name, model: this.model, effectiveModel, httpStatus, latencyMs: Date.now() - start, errorCode: "429" };
+        if (res.status === 404) return { ok: false, provider: this.name, model: this.model, effectiveModel, httpStatus, latencyMs: Date.now() - start, errorCode: "MODEL_NOT_FOUND" };
         this.cb.recordFailure();
-        return { ok: false, provider: this.name, model: this.model, latencyMs: Date.now() - start, errorCode: `HTTP_${res.status}` };
+        return { ok: false, provider: this.name, model: this.model, effectiveModel, httpStatus, latencyMs: Date.now() - start, errorCode: `HTTP_${res.status}`, ...(res.status === 408 || res.status === 504 ? { timeoutSource: "OPENROUTER_OR_UPSTREAM" as const } : {}) };
       }
-      const json = await res.json() as { choices: { message: { content: string } }[] };
+      const json = await res.json() as { model?: string; error?: unknown; choices?: { finish_reason?: string; message?: { content?: string } }[] };
+      effectiveModel = typeof json.model === "string" ? json.model : "MODEL_EFFECTIVE_UNKNOWN";
+      if (json.error) return { ok: false, provider: this.name, model: this.model, effectiveModel, httpStatus, latencyMs: Date.now() - start, errorCode: "INVALID_JSON", jsonClassification: "UPSTREAM_ERROR_WITH_200", parseSuccess: false };
       const raw = json.choices?.[0]?.message?.content || "";
       let data: T | undefined;
-      try { data = parseOpenRouterJson<T>(raw); } catch { return { ok: false, provider: this.name, model: this.model, latencyMs: Date.now() - start, errorCode: "INVALID_JSON", raw }; }
+      try { data = parseOpenRouterJson<T>(raw); } catch { return { ok: false, provider: this.name, model: this.model, effectiveModel, httpStatus, latencyMs: Date.now() - start, errorCode: "INVALID_JSON", jsonClassification: classifyInvalidJson(raw, json.choices?.[0]?.finish_reason), parseSuccess: false }; }
       this.cb.recordSuccess();
-      return { ok: true, provider: this.name, model: this.model, data, raw, latencyMs: Date.now() - start };
+      return { ok: true, provider: this.name, model: this.model, effectiveModel, httpStatus, data, raw, parseSuccess: true, latencyMs: Date.now() - start };
     } catch (e) {
       this.cb.recordFailure();
-      const msg = e instanceof Error ? e.message : "ERR";
-      return { ok: false, provider: this.name, model: this.model, latencyMs: Date.now() - start, errorCode: msg.includes("abort") ? "TIMEOUT" : msg };
+      const name = e instanceof Error ? e.name : "";
+      const msg = e instanceof Error ? e.message : "";
+      const causeCode = (e as { cause?: { code?: string } })?.cause?.code;
+      const clientTimeout = name === "TimeoutError" || name === "AbortError";
+      const networkTimeout = causeCode === "UND_ERR_CONNECT_TIMEOUT" || causeCode === "ETIMEDOUT";
+      return { ok: false, provider: this.name, model: this.model, effectiveModel, httpStatus, latencyMs: Date.now() - start, errorCode: msg === "BUDGET_EXCEEDED" ? msg : clientTimeout || networkTimeout ? "TIMEOUT" : e instanceof SyntaxError ? "INVALID_JSON" : "PROVIDER_NETWORK_ERROR", ...(clientTimeout ? { timeoutSource: "CLIENT_ABORT_SIGNAL" as const } : networkTimeout ? { timeoutSource: "NETWORK_TIMEOUT" as const } : {}), ...(e instanceof SyntaxError ? { jsonClassification: "OTHER", parseSuccess: false } : {}) };
     }
   }
 }

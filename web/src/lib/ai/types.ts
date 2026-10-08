@@ -18,6 +18,11 @@ export type AIResult<T> = {
   latencyMs: number;
   errorCode?: string;
   cached?: boolean;
+  effectiveModel?: string;
+  httpStatus?: number;
+  timeoutSource?: "CLIENT_ABORT_SIGNAL" | "NETWORK_TIMEOUT" | "OPENROUTER_OR_UPSTREAM";
+  jsonClassification?: string;
+  parseSuccess?: boolean;
 };
 
 export type AIProviderHealth = { healthy: boolean; latencyMs?: number };

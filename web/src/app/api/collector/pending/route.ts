@@ -9,22 +9,27 @@ import { GenerationBudget } from "@/lib/ai/generationBudget";
 import { aiConfig } from "@/lib/ai/config";
 import { refreshOperationalAlerts } from "@/lib/observability/alerts";
 import { finishOperationalJob, observeApiRoute, startOperationalJob } from "@/lib/observability/operations";
+import { pendingLimit, pendingClaimArguments } from "@/lib/collector/pendingLimit";
 
 async function handleGET(req: Request) {
   if (!isCronAuthorized(req)) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  return handlePending("CRON");
+  const limit = pendingLimit(req);
+  if (limit === null) return NextResponse.json({ ok: false, error: "INVALID_LIMIT" }, { status: 400 });
+  return handlePending("CRON", limit);
 }
 async function handlePOST(req: Request) {
   if (!isCronAuthorized(req)) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  return handlePending("MANUAL");
+  const limit = pendingLimit(req);
+  if (limit === null) return NextResponse.json({ ok: false, error: "INVALID_LIMIT" }, { status: 400 });
+  return handlePending("MANUAL", limit);
 }
 
-async function handlePending(triggerType: "CRON" | "MANUAL") {
+async function handlePending(triggerType: "CRON" | "MANUAL", limit: 1 | 5) {
   const job = await startOperationalJob("AI_PENDING", triggerType);
   if (job?.acquired === false) return NextResponse.json({ ok: false, error: "AI pending job already RUNNING" }, { status: 409 });
   try {
     const svc = supabaseService();
-    const { data: docs, error } = await svc.rpc("claim_ai_pending_documents", { p_limit: 5 });
+    const { data: docs, error } = await svc.rpc("claim_ai_pending_documents", pendingClaimArguments(limit));
     if (error) throw new Error("PENDING_CLAIM_FAILED");
     let processed = 0;
     const budget = new GenerationBudget(aiConfig.maxPerRun);

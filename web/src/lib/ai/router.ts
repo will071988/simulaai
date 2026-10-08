@@ -96,6 +96,7 @@ export async function generateWithFallback<T>(req: AIRequest, opts?: { validate?
       const beforeCalls = budget.calls;
       const res = await p.generate<T>(req, () => budget.reserve(deps.reserveBudget));
       const invalidSchema = res.ok && opts?.validate && !opts.validate(res.data);
+      if (budget.calls > beforeCalls && p.name === "openrouter") console.info(JSON.stringify({ event: "ai_provider_diagnostics", provider: p.name, requestedModel: p.model, effectiveModel: res.effectiveModel || "MODEL_EFFECTIVE_UNKNOWN", httpStatus: res.httpStatus ?? null, latencyMs: res.latencyMs, timeoutSource: res.timeoutSource ?? null, jsonClassification: invalidSchema ? "SCHEMA_INVALID" : res.jsonClassification ?? null, errorCode: invalidSchema ? "INVALID_SCHEMA" : res.errorCode ?? null }));
       if (budget.calls > beforeCalls) await deps.logUsage(p.name, p.model, req.taskType, res.ok && !invalidSchema, res.latencyMs, invalidSchema ? "INVALID_SCHEMA" : res.errorCode, JSON.stringify(req.input).length, res.raw?.length);
       if (res.errorCode === "BUDGET_EXCEEDED") return { ...res, degraded: true };
       if (res.ok) {

@@ -26,11 +26,15 @@ export class GenerationBudget {
   }
 }
 
+export function generationTimeoutMs(): number {
+  const configuredTimeout = Number(process.env.AI_REQUEST_TIMEOUT_MS || 30000);
+  return Number.isFinite(configuredTimeout) ? Math.max(5000, Math.min(55000, Math.trunc(configuredTimeout))) : 30000;
+}
+
 export async function generationFetch(url: string, options: RequestInit, permit?: GenerationPermit): Promise<Response> {
   // All local guards and serialization run before reserving; automatic redirects
   // are forbidden so one reservation cannot trigger multiple provider requests.
   if (!permit || !(await permit())) throw new Error("BUDGET_EXCEEDED");
-  const configuredTimeout = Number(process.env.AI_REQUEST_TIMEOUT_MS || 30000);
-  const timeoutMs = Number.isFinite(configuredTimeout) ? Math.max(5000, Math.min(55000, Math.trunc(configuredTimeout))) : 30000;
+  const timeoutMs = generationTimeoutMs();
   return fetch(url, { ...options, signal: AbortSignal.timeout(timeoutMs), redirect: "error" });
 }
