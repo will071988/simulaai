@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { pendingLimit, pendingClaimArguments } from "../src/lib/collector/pendingLimit";
+import { pendingLimit, pendingClaimArguments, pendingProviderOrder } from "../src/lib/collector/pendingLimit";
 import { isCronAuthorized } from "../src/lib/collector/cronAuth";
 import { parseOpenRouterJson, classifyInvalidJson, OpenRouterProvider } from "../src/lib/ai/openrouter";
 
@@ -10,6 +10,9 @@ async function main() {
   }
   assert.equal(pendingLimit(new Request("https://fixture.test/api/collector/pending")), 5);
   assert.equal(pendingLimit(new Request("https://fixture.test/api/collector/pending?limit=1&limit=5")), null);
+  assert.equal(pendingProviderOrder(new Request("https://fixture.test")), undefined);
+  assert.equal(pendingProviderOrder(new Request("https://fixture.test", { headers: { "x-ai-healthy-providers": "unknown" } })), null);
+  assert.equal(pendingProviderOrder(new Request("https://fixture.test", { headers: { "x-ai-healthy-providers": "openrouter,openrouter" } })), null);
   const route = readFileSync("src/app/api/collector/pending/route.ts", "utf8");
   assert.deepEqual(pendingClaimArguments(1), { p_limit: 1 });
   assert.deepEqual(pendingClaimArguments(5), { p_limit: 5 });

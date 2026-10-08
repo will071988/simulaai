@@ -5,6 +5,7 @@ export interface AIProvider {
   name: string;
   model: string;
   generate<T>(req: AIRequest, permit?: GenerationPermit): Promise<AIResult<T>>;
+  generateStructured?<T>(req: AIRequest, permit?: GenerationPermit): Promise<AIResult<T>>;
   healthCheck(): Promise<AIProviderHealth>;
 }
 

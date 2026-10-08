@@ -19,7 +19,7 @@ async function scenario(options: { cached?: boolean; unhealthy?: boolean; blocke
     async generate<T>(_req: AIRequest, permit?: GenerationPermit): Promise<AIResult<T>> {
       try {
         const response = await generationFetch("https://fixture.invalid/generate", {}, permit);
-        return { ok: response.ok, provider: name, model: "test/free", latencyMs: 1, data: response.ok ? await response.json() as T : undefined, errorCode: response.ok ? undefined : String(response.status) };
+        return { ok: response.ok, provider: name, model: "test/free", latencyMs: 1, data: response.ok ? await response.json() as T : undefined, errorCode: response.ok ? undefined : response.status >= 500 ? "HTTP_5XX" : String(response.status) };
       } catch {
         return { ok: false, provider: name, model: "test/free", latencyMs: 0, errorCode: "BUDGET_EXCEEDED" };
       }
@@ -50,11 +50,12 @@ async function scenario(options: { cached?: boolean; unhealthy?: boolean; blocke
 async function main() {
   for (const options of [{ cached: true }, { unhealthy: true }, { blocked: true }, { missing: true }, { rpcFails: true }]) assert.equal((await scenario(options)).physical, 0);
   assert.equal((await scenario({})).reservations, 1);
-  assert.equal((await scenario({ statuses: [429, 200] })).reservations, 2);
+  assert.equal((await scenario({ statuses: [429, 200] })).reservations, 1, "one attempt per provider, no same-provider retry");
+  assert.equal((await scenario({ statuses: [429, 200], fallback: true })).reservations, 2);
   assert.equal((await scenario({ statuses: [503, 200], fallback: true })).reservations, 2);
-  const exhausted = await scenario({ statuses: [429, 200], dailyLimit: 1 });
+  const exhausted = await scenario({ statuses: [429, 200], dailyLimit: 1, fallback: true });
   assert.equal(exhausted.physical, 1);
-  assert.equal(exhausted.result.errorCode, "BUDGET_EXCEEDED");
+  assert.equal(exhausted.result.errorCode, "BUDGET_EXHAUSTED");
   assert.equal((await scenario({ statuses: [429, 200], runLimit: 1 })).physical, 1);
   assert.equal((await scenario({ invalidSchema: true })).result.errorCode, "INVALID_SCHEMA");
   const shared = new GenerationBudget(2);

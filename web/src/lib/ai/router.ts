@@ -1,20 +1,12 @@
 import type { AIProvider } from "./provider";
 import type { AIRequest, AIResult } from "./types";
-import { GroqProvider } from "./groq";
-import { GeminiProvider } from "./gemini";
-import { OpenRouterProvider } from "./openrouter";
+import { createProviders, providerConfigured } from "./registry";
 import { supabaseService } from "@/lib/supabase-server";
 import crypto from "crypto";
-import { aiConfig, isModelAllowed } from "./config";
+import { aiConfig, isProviderModelAllowed } from "./config";
 import { GenerationBudget } from "./generationBudget";
 
-function providers(): Record<string, AIProvider> {
-  return {
-    groq: new GroqProvider(),
-    gemini: new GeminiProvider(),
-    openrouter: new OpenRouterProvider(),
-  };
-}
+const providers = createProviders;
 
 function hashInput(input: unknown, promptVersion: string, taskType: string) {
   const h = crypto.createHash("sha256");
@@ -64,63 +56,62 @@ export type RouterDependencies = {
   logUsage: typeof logUsage;
   reserveBudget: typeof reserveBudget;
   order: string[];
-  modelAllowed: (model: string) => boolean;
+  modelAllowed: (model: string, provider?: string) => boolean;
   sleep: (ms: number) => Promise<void>;
+  configured?: (name: string) => boolean;
 };
-const dependencies: RouterDependencies = { providers, getCached, setCached, logUsage, reserveBudget, order: aiConfig.providerOrder, modelAllowed: isModelAllowed, sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)) };
+const dependencies: RouterDependencies = { providers, getCached, setCached, logUsage, reserveBudget, order: aiConfig.providerOrder, modelAllowed: (model, provider) => isProviderModelAllowed(provider || "openrouter", model), configured: providerConfigured, sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)) };
+
+export function smokeDependencies(provider: string): RouterDependencies {
+  return { ...dependencies, order: [provider], getCached: async () => null, setCached: async () => {} };
+}
+
+type Execution = { providers: Record<string, AIProvider>; failures: Map<string, number>; health: Map<string, "healthy" | "degraded" | "unavailable"> };
+const executions = new WeakMap<GenerationBudget, Execution>();
+export function isFallbackError(code?: string): boolean {
+  return ["TIMEOUT", "EMPTY_BODY", "INVALID_JSON", "429", "HTTP_5XX", "PROVIDER_UNAVAILABLE"].includes(code || "") || /^HTTP_5\d\d$/.test(code || "");
+}
 
 export async function generateWithFallback<T>(req: AIRequest, opts?: { validate?: (d: unknown) => boolean; budget?: GenerationBudget }, deps: RouterDependencies = dependencies): Promise<AIResult<T> & { degraded?: boolean }> {
+  try {
+    if (!req.prompt?.trim() || !req.promptVersion || JSON.stringify(req.input) === undefined) throw new Error("INVALID_INPUT");
+  } catch { return { ok: false, provider: "none", model: "", latencyMs: 0, errorCode: "INVALID_INPUT" }; }
   if (process.env.COLLECTOR_ENABLED === "false") return { ok: false, provider: "disabled", model: "", latencyMs: 0, errorCode: "COLLECTOR_DISABLED", degraded: true };
   if (process.env.AI_ENABLED === "false") return { ok: false, provider: "disabled", model: "", latencyMs: 0, errorCode: "AI_DISABLED", degraded: true };
   const inputHash = hashInput(req.input, req.promptVersion, req.taskType);
   const cached = await deps.getCached<T>(inputHash, req.promptVersion);
-  if (cached && (!opts?.validate || opts.validate(cached))) return { ok: true, provider: "cache", model: "cache", data: cached, latencyMs: 0, cached: true };
+  if (cached && (!opts?.validate || opts.validate(cached))) return { ok: true, success: true, provider: "cache", model: "cache", requestedModel: "cache", effectiveModel: "MODEL_EFFECTIVE_UNKNOWN", data: cached, latencyMs: 0, cached: true };
 
-  const ord = deps.order;
-  const map = deps.providers();
   const budget = opts?.budget || new GenerationBudget(aiConfig.maxPerRun);
-  let lastErrorCode = "AI_PENDING";
-
-  for (const name of ord) {
-    const p = map[name];
-    if (!p) continue;
-    if (!deps.modelAllowed(p.model)) {
-      lastErrorCode = "PAID_MODEL_BLOCKED";
-      continue;
+  const ord = budget.providerOrder || deps.order;
+  let execution = executions.get(budget);
+  if (!execution) { execution = { providers: deps.providers(), failures: new Map(), health: new Map() }; executions.set(budget, execution); }
+  let last: AIResult<T> = { ok: false, provider: "all", model: "all", latencyMs: 0, errorCode: "SKIPPED_NOT_CONFIGURED" };
+  const attempts: NonNullable<AIResult<T>["attempts"]> = [];
+  for (const name of [...new Set(ord)]) {
+    const p = execution.providers[name];
+    if (!p || (deps.configured && !deps.configured(name))) { execution.health.set(name, "unavailable"); continue; }
+    if ((execution.failures.get(name) || 0) >= 2) { last = { ok: false, provider: name, model: p.model, latencyMs: 0, errorCode: "PROVIDER_UNAVAILABLE" }; continue; }
+    if (!deps.modelAllowed(p.model, name)) return { ok: false, provider: name, model: p.model, latencyMs: 0, errorCode: "AUTH_CONFIGURATION_ERROR", attempts, degraded: true };
+    if (!(await p.healthCheck()).healthy) { last = { ok: false, provider: name, model: p.model, latencyMs: 0, errorCode: "PROVIDER_UNAVAILABLE" }; execution.health.set(name, "unavailable"); continue; }
+    if (budget.calls >= budget.limit) return { ...last, errorCode: "BUDGET_EXHAUSTED", attempts, degraded: true };
+    const beforeCalls = budget.calls;
+    const result = p.generateStructured ? await p.generateStructured<T>(req, () => budget.reserve(deps.reserveBudget)) : await p.generate<T>(req, () => budget.reserve(deps.reserveBudget));
+    const invalidSchema = result.ok && opts?.validate && !opts.validate(result.data);
+    last = { ...result, ok: result.ok && !invalidSchema, success: result.ok && !invalidSchema, requestedModel: p.model, effectiveModel: result.effectiveModel || "MODEL_EFFECTIVE_UNKNOWN", ...(invalidSchema ? { errorCode: "INVALID_SCHEMA" } : result.errorCode === "BUDGET_EXCEEDED" ? { errorCode: "BUDGET_EXHAUSTED" } : {}) };
+    if (budget.calls > beforeCalls) {
+      attempts.push({ provider: name, requestedModel: p.model, effectiveModel: last.effectiveModel!, latencyMs: last.latencyMs, errorCode: last.errorCode });
+      await deps.logUsage(p.name, p.model, req.taskType, last.ok, last.latencyMs, last.errorCode, JSON.stringify(req.input).length, result.raw?.length);
+      if (deps === dependencies) console.info(JSON.stringify({ event: "ai_provider_diagnostics", provider: p.name, requestedModel: p.model, effectiveModel: last.effectiveModel, httpStatus: result.httpStatus ?? null, latencyMs: last.latencyMs, timeoutSource: result.timeoutSource ?? null, jsonClassification: invalidSchema ? "SCHEMA_INVALID" : result.jsonClassification ?? null, errorCode: last.errorCode ?? null }));
     }
-    const health = await p.healthCheck();
-    if (!health.healthy) { lastErrorCode = "PROVIDER_DOWN"; continue; }
-    // single retry with backoff for 429
-    let attempt = 0;
-    while (attempt < 2) {
-      const beforeCalls = budget.calls;
-      const res = await p.generate<T>(req, () => budget.reserve(deps.reserveBudget));
-      const invalidSchema = res.ok && opts?.validate && !opts.validate(res.data);
-      if (budget.calls > beforeCalls && p.name === "openrouter") console.info(JSON.stringify({ event: "ai_provider_diagnostics", provider: p.name, requestedModel: p.model, effectiveModel: res.effectiveModel || "MODEL_EFFECTIVE_UNKNOWN", httpStatus: res.httpStatus ?? null, latencyMs: res.latencyMs, timeoutSource: res.timeoutSource ?? null, jsonClassification: invalidSchema ? "SCHEMA_INVALID" : res.jsonClassification ?? null, errorCode: invalidSchema ? "INVALID_SCHEMA" : res.errorCode ?? null }));
-      if (budget.calls > beforeCalls) await deps.logUsage(p.name, p.model, req.taskType, res.ok && !invalidSchema, res.latencyMs, invalidSchema ? "INVALID_SCHEMA" : res.errorCode, JSON.stringify(req.input).length, res.raw?.length);
-      if (res.errorCode === "BUDGET_EXCEEDED") return { ...res, degraded: true };
-      if (res.ok) {
-        if (invalidSchema) {
-          lastErrorCode = "INVALID_SCHEMA";
-          break; // try next provider
-        }
-        await deps.setCached(inputHash, req.promptVersion, p.name, p.model, res.data);
-        return res;
-      }
-      if (res.errorCode === "429") {
-        lastErrorCode = "429";
-        const backoff = 1500 * Math.pow(2, attempt) + Math.random() * 500;
-        if (attempt === 0) await deps.sleep(backoff);
-        attempt++;
-        continue;
-      }
-      if (res.errorCode === "MODEL_NOT_FOUND") {
-        lastErrorCode = "MODEL_NOT_FOUND";
-        break; // try next provider/model
-      }
-      lastErrorCode = res.errorCode || "PROVIDER_DOWN";
-      break;
+    if (last.ok) {
+      execution.failures.set(name, 0); execution.health.set(name, "healthy");
+      await deps.setCached(inputHash, req.promptVersion, p.name, p.model, result.data);
+      return { ...last, attempts };
     }
+    const failures = (execution.failures.get(name) || 0) + 1;
+    execution.failures.set(name, failures); execution.health.set(name, failures >= 2 ? "unavailable" : "degraded");
+    if (!isFallbackError(last.errorCode)) return { ...last, attempts, degraded: true };
   }
-  return { ok: false, provider: "all", model: "all", latencyMs: 0, errorCode: lastErrorCode, degraded: true };
+  return { ...last, success: false, attempts, degraded: true };
 }

@@ -5,7 +5,7 @@ export class GenerationBudget {
   calls = 0;
   private tail: Promise<void> = Promise.resolve();
 
-  constructor(readonly limit: number) {
+  constructor(readonly limit: number, readonly providerOrder?: readonly string[]) {
     if (!Number.isInteger(limit) || limit < 0) throw new Error("INVALID_RUN_BUDGET");
   }
 

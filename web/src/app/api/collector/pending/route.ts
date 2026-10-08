@@ -9,22 +9,26 @@ import { GenerationBudget } from "@/lib/ai/generationBudget";
 import { aiConfig } from "@/lib/ai/config";
 import { refreshOperationalAlerts } from "@/lib/observability/alerts";
 import { finishOperationalJob, observeApiRoute, startOperationalJob } from "@/lib/observability/operations";
-import { pendingLimit, pendingClaimArguments } from "@/lib/collector/pendingLimit";
+import { pendingLimit, pendingClaimArguments, pendingProviderOrder } from "@/lib/collector/pendingLimit";
 
 async function handleGET(req: Request) {
   if (!isCronAuthorized(req)) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   const limit = pendingLimit(req);
   if (limit === null) return NextResponse.json({ ok: false, error: "INVALID_LIMIT" }, { status: 400 });
-  return handlePending("CRON", limit);
+  const order = pendingProviderOrder(req);
+  if (order === null) return NextResponse.json({ ok: false, error: "INVALID_PROVIDER_SELECTION" }, { status: 400 });
+  return handlePending("CRON", limit, order);
 }
 async function handlePOST(req: Request) {
   if (!isCronAuthorized(req)) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   const limit = pendingLimit(req);
   if (limit === null) return NextResponse.json({ ok: false, error: "INVALID_LIMIT" }, { status: 400 });
-  return handlePending("MANUAL", limit);
+  const order = pendingProviderOrder(req);
+  if (order === null) return NextResponse.json({ ok: false, error: "INVALID_PROVIDER_SELECTION" }, { status: 400 });
+  return handlePending("MANUAL", limit, order);
 }
 
-async function handlePending(triggerType: "CRON" | "MANUAL", limit: 1 | 5) {
+async function handlePending(triggerType: "CRON" | "MANUAL", limit: 1 | 5, providerOrder?: string[]) {
   const job = await startOperationalJob("AI_PENDING", triggerType);
   if (job?.acquired === false) return NextResponse.json({ ok: false, error: "AI pending job already RUNNING" }, { status: 409 });
   try {
@@ -32,7 +36,7 @@ async function handlePending(triggerType: "CRON" | "MANUAL", limit: 1 | 5) {
     const { data: docs, error } = await svc.rpc("claim_ai_pending_documents", pendingClaimArguments(limit));
     if (error) throw new Error("PENDING_CLAIM_FAILED");
     let processed = 0;
-    const budget = new GenerationBudget(aiConfig.maxPerRun);
+    const budget = new GenerationBudget(aiConfig.maxPerRun, providerOrder);
     let failed = 0;
     const scheduleRetry = async (d: Record<string, unknown>, meta: Record<string, unknown>, errorCode: string) => {
       const retry = Number(d.ai_retry_count || 0);
