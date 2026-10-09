@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
 
 const port = 3100;
 const base = `http://127.0.0.1:${port}`;
@@ -23,7 +26,7 @@ async function expectStatus(path: string, status: number, init?: RequestInit) {
 }
 
 async function main() {
-  const child = spawn(process.platform === "win32" ? "npm.cmd" : "npm", ["run", "start", "--", "-H", "127.0.0.1", "-p", String(port)], {
+  const child = spawn(process.execPath, [require.resolve("next/dist/bin/next"), "start", "-H", "127.0.0.1", "-p", String(port)], {
     cwd: process.cwd(),
     env: { ...process.env, PORT: String(port), HOSTNAME: "127.0.0.1" },
     stdio: ["ignore", "pipe", "pipe"],
