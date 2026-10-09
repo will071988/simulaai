@@ -17,7 +17,7 @@ async function waitForServer() {
 }
 
 async function expectStatus(path: string, status: number, init?: RequestInit) {
-  const response = await fetch(base + path, { redirect: "manual", ...init });
+  const response = await fetch(base + path, { redirect: "manual", signal: AbortSignal.timeout(5000), ...init });
   assert.equal(response.status, status, `${path} expected ${status}, got ${response.status}`);
   return response;
 }
@@ -27,6 +27,7 @@ async function main() {
     cwd: process.cwd(),
     env: { ...process.env, PORT: String(port), HOSTNAME: "127.0.0.1" },
     stdio: ["ignore", "pipe", "pipe"],
+    detached: process.platform !== "win32",
   });
 
   let output = "";
@@ -65,9 +66,14 @@ async function main() {
 
     console.log("Sprint 3.6 local production-mode E2E smoke passed");
   } finally {
-    child.kill("SIGTERM");
+    try {
+      if (process.platform === "win32") child.kill("SIGTERM");
+      else if (child.pid) process.kill(-child.pid, "SIGTERM");
+    } catch {}
     await new Promise((resolve) => setTimeout(resolve, 500));
-    if (!child.killed) child.kill("SIGKILL");
+    try {
+      if (process.platform !== "win32" && child.pid && child.exitCode === null) process.kill(-child.pid, "SIGKILL");
+    } catch {}
     if (child.exitCode && child.exitCode !== 0) {
       console.error(output.slice(-4000));
     }
