@@ -58,6 +58,7 @@ jobs:
       - run: npm run test:3.3
       - run: npm run test:3.4
       - run: npm run test:3.5
+      - run: npm run test:3.6
       - run: npm run test:publication-policy
       - run: npm run test:collector-observability
       - run: npm run test:collector-idempotency
@@ -65,3 +66,4 @@ jobs:
       - run: npx tsc --noEmit
       - run: npm audit --omit=dev
       - run: npm run build
+      - run: npm run test:3.6:e2e
