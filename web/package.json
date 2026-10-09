@@ -59,7 +59,9 @@
     "test:3.2": "tsx scripts/validate-3.2.ts",
     "test:3.3": "tsx scripts/validate-3.3.ts",
     "test:3.4": "tsx scripts/validate-3.4.ts",
-    "test:3.5": "tsx scripts/validate-3.5.ts"
+    "test:3.5": "tsx scripts/validate-3.5.ts",
+    "test:3.6": "tsx scripts/validate-3.6.ts",
+    "test:3.6:e2e": "tsx scripts/e2e-3.6-local.ts"
   },
   "dependencies": {
     "@napi-rs/canvas": "0.1.80",
