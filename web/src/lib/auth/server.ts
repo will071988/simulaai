@@ -1,10 +1,16 @@
 import type { User } from "@supabase/supabase-js";
 import { supabaseService } from "@/lib/supabase-server";
 
+const MIN_BEARER_LENGTH = 16;
+const MAX_BEARER_LENGTH = 8192;
+
 export function bearerToken(request: Request) {
   const authorization = request.headers.get("authorization") || "";
+  if (authorization.length > MAX_BEARER_LENGTH + 16) return null;
   const match = authorization.match(/^Bearer\s+([^\s]+)$/i);
-  return match?.[1] || null;
+  const token = match?.[1] || "";
+  if (token.length < MIN_BEARER_LENGTH || token.length > MAX_BEARER_LENGTH) return null;
+  return token;
 }
 
 export async function authenticatedUser(request: Request): Promise<User | null> {
