@@ -48,7 +48,7 @@ async function handleGET(request: Request) {
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "";
 
   const gates = {
-    ciAndDeploy: true,
+    productionRuntime: process.env.VERCEL_ENV === "production",
     collectorBacklog: (pending.count || 0) <= 20,
     noActiveClaims: (claims.count || 0) === 0,
     sourcesHealthy: (degradedSources.count || 0) === 0,
