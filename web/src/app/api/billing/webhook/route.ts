@@ -59,7 +59,7 @@ async function syncSubscription(object: Record<string, unknown>) {
     stripe_customer_id: customerId,
     price_id: asString(price?.id),
     status: asString(object.status) || "unknown",
-    current_period_end: unixDate(object.current_period_end),
+    current_period_end: unixDate(object.current_period_end) || unixDate(firstItem?.current_period_end) || unixDate(object.trial_end),
     cancel_at_period_end: object.cancel_at_period_end === true,
     updated_at: new Date().toISOString(),
   }, { onConflict: "stripe_subscription_id" });

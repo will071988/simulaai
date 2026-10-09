@@ -28,6 +28,7 @@ assert.match(webhook, /verifyStripeSignature/);
 assert.match(webhook, /simulaai_billing_webhook_events/);
 assert.match(webhook, /checkout\.session\.completed/);
 assert.match(webhook, /customer\.subscription\.updated/);
+assert.match(webhook, /firstItem\?\.current_period_end/);
 
 const migration = read("../supabase/migrations/20261009143000_sprint_3_4_billing.sql");
 for (const table of ["simulaai_billing_customers", "simulaai_billing_subscriptions", "simulaai_billing_purchases", "simulaai_billing_webhook_events"]) {
