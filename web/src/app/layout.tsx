@@ -6,7 +6,10 @@ import "./globals.css";
 const display = Space_Grotesk({ subsets: ["latin"], variable: "--font-display", weight: ["400","500","600","700"] });
 const body = Inter({ subsets: ["latin"], variable: "--font-body" });
 
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://simulaai-kappa.vercel.app";
+
 export const metadata: Metadata = {
+  metadataBase: new URL(siteUrl),
   title: "SimulaAí — Simulados que te aprovam",
   description: "Simulados no estilo da banca com correção por IA. PF, PRF, INSS, BACEN e mais. R$29,90/mês. Comece grátis e entre no ranking.",
   openGraph: {
