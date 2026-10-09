@@ -21,7 +21,7 @@ function unixDate(value: unknown) {
 
 async function mapCustomer(userId: string, customerId: string | null) {
   if (!customerId) return;
-  const { error } = await supabaseService().from("billing_customers").upsert({
+  const { error } = await supabaseService().from("simulaai_billing_customers").upsert({
     user_id: userId,
     stripe_customer_id: customerId,
     updated_at: new Date().toISOString(),
@@ -34,7 +34,7 @@ async function resolveUser(customerId: string | null, metadata: Record<string, u
   if (metadataUser) return metadataUser;
   if (!customerId) return null;
   const { data } = await supabaseService()
-    .from("billing_customers")
+    .from("simulaai_billing_customers")
     .select("user_id")
     .eq("stripe_customer_id", customerId)
     .maybeSingle();
@@ -53,7 +53,7 @@ async function syncSubscription(object: Record<string, unknown>) {
   const price = firstItem?.price && typeof firstItem.price === "object" ? firstItem.price as Record<string, unknown> : null;
 
   await mapCustomer(userId, customerId);
-  const { error } = await supabaseService().from("billing_subscriptions").upsert({
+  const { error } = await supabaseService().from("simulaai_billing_subscriptions").upsert({
     stripe_subscription_id: subscriptionId,
     user_id: userId,
     stripe_customer_id: customerId,
@@ -79,7 +79,7 @@ async function handlePOST(request: Request) {
 
   const svc = supabaseService();
   const { data: processed } = await svc
-    .from("billing_webhook_events")
+    .from("simulaai_billing_webhook_events")
     .select("stripe_event_id")
     .eq("stripe_event_id", event.id)
     .maybeSingle();
@@ -95,7 +95,7 @@ async function handlePOST(request: Request) {
       await mapCustomer(userId, customerId);
 
       if (object.mode === "payment" && object.payment_status === "paid") {
-        const { error } = await svc.from("billing_purchases").upsert({
+        const { error } = await svc.from("simulaai_billing_purchases").upsert({
           stripe_checkout_session_id: asString(object.id),
           user_id: userId,
           stripe_customer_id: customerId,
@@ -113,7 +113,7 @@ async function handlePOST(request: Request) {
       await syncSubscription(object);
     }
 
-    const { error: eventError } = await svc.from("billing_webhook_events").insert({
+    const { error: eventError } = await svc.from("simulaai_billing_webhook_events").insert({
       stripe_event_id: event.id,
       event_type: event.type,
     });
