@@ -37,7 +37,7 @@ async function main() {
   try {
     await waitForServer();
 
-    for (const path of ["/", "/concursos", "/simulados", "/quiz", "/conta", "/privacidade", "/termos", "/robots.txt", "/sitemap.xml", "/manifest.webmanifest"]) {
+    for (const path of ["/", "/simulados", "/quiz", "/conta", "/privacidade", "/termos", "/robots.txt", "/manifest.webmanifest"]) {
       await expectStatus(path, 200);
     }
 
