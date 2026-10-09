@@ -25,15 +25,15 @@ assert.doesNotMatch(checkout, /STRIPE_SECRET_KEY/);
 
 const webhook = read("src/app/api/billing/webhook/route.ts");
 assert.match(webhook, /verifyStripeSignature/);
-assert.match(webhook, /billing_webhook_events/);
+assert.match(webhook, /simulaai_billing_webhook_events/);
 assert.match(webhook, /checkout\.session\.completed/);
 assert.match(webhook, /customer\.subscription\.updated/);
 
 const migration = read("../supabase/migrations/20261009143000_sprint_3_4_billing.sql");
-for (const table of ["billing_customers", "billing_subscriptions", "billing_purchases", "billing_webhook_events"]) {
+for (const table of ["simulaai_billing_customers", "simulaai_billing_subscriptions", "simulaai_billing_purchases", "simulaai_billing_webhook_events"]) {
   assert.match(migration, new RegExp(`alter table public\\.${table} enable row level security`));
 }
-assert.match(migration, /revoke all on table public\.billing_customers from anon, authenticated/);
+assert.match(migration, /revoke all on table public\.simulaai_billing_customers from anon, authenticated/);
 
 const env = read(".env.example");
 for (const key of [
