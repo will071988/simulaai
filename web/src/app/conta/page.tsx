@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import type { Session } from "@supabase/supabase-js";
 import { Header, Footer } from "@/components/Header";
+import { BillingAccountPanel } from "@/components/BillingAccountPanel";
 import { supabase } from "@/lib/supabase";
 
 type Profile = { userId: string; nome: string; email: string | null; createdAt: string; updatedAt: string };
@@ -139,6 +140,7 @@ export default function ContaPage() {
       {error && <p role="alert" className="mt-5 rounded-2xl border border-red-300/30 bg-red-500/15 p-4 text-sm text-red-100">{error}</p>}
 
       {loading ? <div className="mt-8 glass rounded-3xl p-8">Verificando sessão…</div> : session ? <div className="mt-8 space-y-5">
+        <BillingAccountPanel session={session} />
         <form onSubmit={saveProfile} className="rounded-3xl bg-white p-6 text-zinc-900">
           <h2 className="font-display text-xl font-bold">Perfil</h2>
           <p className="mt-1 text-sm text-zinc-500">Conta: {profile?.email || session.user.email}</p>
