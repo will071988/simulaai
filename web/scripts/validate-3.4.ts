@@ -10,6 +10,7 @@ assert.match(plans, /premium_monthly/);
 assert.match(plans, /premium_annual/);
 assert.match(plans, /premium_one_time/);
 assert.match(plans, /STRIPE_PRICE_PREMIUM_MONTHLY/);
+assert.match(plans, /STRIPE_PAYMENT_LINK_PREMIUM_MONTHLY/);
 
 const stripe = read("src/lib/billing/stripe.ts");
 assert.match(stripe, /timingSafeEqual/);
@@ -36,11 +37,14 @@ assert.match(migration, /revoke all on table public\.billing_customers from anon
 
 const env = read(".env.example");
 for (const key of [
-  "STRIPE_SECRET_KEY=",
   "STRIPE_WEBHOOK_SECRET=",
   "STRIPE_PRICE_PREMIUM_MONTHLY=",
   "STRIPE_PRICE_PREMIUM_ANNUAL=",
   "STRIPE_PRICE_PREMIUM_ONE_TIME=",
+  "STRIPE_PAYMENT_LINK_PREMIUM_MONTHLY=",
+  "STRIPE_PAYMENT_LINK_PREMIUM_ANNUAL=",
+  "STRIPE_PAYMENT_LINK_PREMIUM_ONE_TIME=",
+  "STRIPE_PORTAL_LOGIN_URL=",
 ]) assert.match(env, new RegExp(key));
 
 assert.doesNotMatch(env, /sk_(live|test)_/);
