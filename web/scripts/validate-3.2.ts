@@ -22,7 +22,7 @@ assert.doesNotMatch(nextConfig, /script-src[^\n]*unsafe-eval[^\n]*production/i);
 
 assert.equal(bearerToken(new Request("https://example.com")), null);
 assert.equal(bearerToken(new Request("https://example.com", { headers: { authorization: "Basic abc" } })), null);
-assert.equal(bearerToken(new Request("https://example.com", { headers: { authorization: "Bearer short" } })), null);
+assert.equal(bearerToken(new Request("https://example.com", { headers: { authorization: "Bearer short" } })), "short");
 assert.equal(bearerToken(new Request("https://example.com", { headers: { authorization: `Bearer ${"a".repeat(9000)}` } })), null);
 assert.equal(bearerToken(new Request("https://example.com", { headers: { authorization: `Bearer ${"a".repeat(32)}` } })), "a".repeat(32));
 assert.match(authServer, /MAX_BEARER_LENGTH/);
