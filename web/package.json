@@ -55,7 +55,8 @@
     "backfill:enrichment": "tsx scripts/backfill-enrichment.ts",
     "test:2.9": "tsx scripts/validate-2.9.ts",
     "test:3.0": "tsx scripts/validate-3.0.ts",
-    "test:3.1": "tsx scripts/validate-3.1.ts"
+    "test:3.1": "tsx scripts/validate-3.1.ts",
+    "test:3.2": "tsx scripts/validate-3.2.ts"
   },
   "dependencies": {
     "@napi-rs/canvas": "0.1.80",
