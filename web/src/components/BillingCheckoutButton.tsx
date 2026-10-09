@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import type { BillingPlanCode } from "@/lib/billing/plans";
 
@@ -13,6 +14,7 @@ export function BillingCheckoutButton({
   children: ReactNode;
   className?: string;
 }) {
+  const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -23,7 +25,7 @@ export function BillingCheckoutButton({
       const { data } = await supabase.auth.getSession();
       const session = data.session;
       if (!session) {
-        window.location.href = "/conta?billing=login-required";
+        router.push("/conta?billing=login-required");
         return;
       }
       const response = await fetch("/api/billing/checkout", {
