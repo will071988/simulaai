@@ -52,3 +52,8 @@ revoke all on table public.simulaai_billing_customers from anon, authenticated;
 revoke all on table public.simulaai_billing_subscriptions from anon, authenticated;
 revoke all on table public.simulaai_billing_purchases from anon, authenticated;
 revoke all on table public.simulaai_billing_webhook_events from anon, authenticated;
+
+grant select, insert, update, delete on table public.simulaai_billing_customers to service_role;
+grant select, insert, update, delete on table public.simulaai_billing_subscriptions to service_role;
+grant select, insert, update, delete on table public.simulaai_billing_purchases to service_role;
+grant select, insert, update, delete on table public.simulaai_billing_webhook_events to service_role;
