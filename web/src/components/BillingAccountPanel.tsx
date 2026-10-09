@@ -18,17 +18,28 @@ export function BillingAccountPanel({ session }: { session: Session }) {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
-  async function load() {
-    const response = await fetch("/api/billing/entitlement", {
+  useEffect(() => {
+    let cancelled = false;
+
+    void fetch("/api/billing/entitlement", {
       headers: { authorization: `Bearer ${session.access_token}` },
       cache: "no-store",
-    });
-    if (!response.ok) { setError("Não foi possível carregar sua assinatura."); return; }
-    const payload = await response.json();
-    setData(payload.data);
-  }
+    })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("ENTITLEMENT_LOAD_FAILED");
+        return response.json();
+      })
+      .then((payload) => {
+        if (!cancelled) setData(payload.data);
+      })
+      .catch(() => {
+        if (!cancelled) setError("Não foi possível carregar sua assinatura.");
+      });
 
-  useEffect(() => { void load(); }, [session.access_token]);
+    return () => {
+      cancelled = true;
+    };
+  }, [session.access_token]);
 
   async function openPortal() {
     setBusy(true); setError("");
