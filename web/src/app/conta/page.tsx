@@ -100,6 +100,25 @@ export default function ContaPage() {
     setBusy(false);
   }
 
+  async function exportAccountData() {
+    if (!session) return;
+    setBusy(true); setError(""); setNotice("");
+    try {
+      const response = await fetch("/api/account/export", { headers: { authorization: `Bearer ${session.access_token}` }, cache: "no-store" });
+      if (!response.ok) { setError("Não foi possível exportar seus dados."); return; }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = "simulaai-dados.json";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+      setNotice("Exportação concluída.");
+    } finally { setBusy(false); }
+  }
+
   async function deleteAccount() {
     if (!session || deletePhrase !== "EXCLUIR") return;
     setBusy(true); setError(""); setNotice("");
