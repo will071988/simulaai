@@ -18,6 +18,7 @@ export const metadata: Metadata = {
 };
 
 export default function Home() {
+  const commercialBillingLive = String(process.env.STRIPE_LIVEMODE || "").toLowerCase() === "true";
   return (
     <div className="mesh min-h-screen">
       <Header />
@@ -183,17 +184,17 @@ export default function Home() {
               <span className="text-xs font-black tracking-widest px-3 py-1 rounded-full bg-white text-black">MAIS POPULAR</span>
               <h3 className="font-bold mt-3">Trilha Ilimitada</h3><p className="text-3xl font-black mt-2">R$29,90<span className="text-base font-normal text-white/60">/mês</span></p><p className="text-sm text-white/60">ou R$299/ano (2 meses grátis)</p>
               <ul className="mt-4 text-sm space-y-2"><li>✓ Ilimitado na sua trilha</li><li>✓ Correção IA completa</li><li>✓ Ranking + evolução por tema</li><li>✓ Novos simulados toda semana</li></ul>
-               <div className="mt-6 grid gap-2">
+               {commercialBillingLive ? <><div className="mt-6 grid gap-2">
                 <BillingCheckoutButton planCode="premium_monthly" className="w-full rounded-full bg-white text-black py-3 font-bold hover:bg-zinc-100 transition">Assinar mensal — R$29,90</BillingCheckoutButton>
                 <BillingCheckoutButton planCode="premium_annual" className="w-full rounded-full border border-white/20 py-3 font-bold hover:bg-white/10 transition">Assinar anual — R$299</BillingCheckoutButton>
                </div>
-               <p className="text-xs text-center text-white/50 mt-2">Pagamento seguro processado pelo Stripe</p>
+               <p className="text-xs text-center text-white/50 mt-2">Pagamento seguro processado pelo Stripe</p></> : <p className="mt-6 rounded-2xl border border-amber-300/30 bg-amber-500/10 p-3 text-center text-sm text-amber-100">Assinaturas em homologação. O plano grátis permanece disponível.</p>}
             </div>
           </div>
           <div className="glass rounded-[24px] p-6">
             <h3 className="font-bold">Avulso Final</h3><p className="text-3xl font-black mt-2">R$14,90</p><p className="text-sm text-white/60">Simulado Premium pré-edital</p>
             <ul className="mt-4 text-sm space-y-2 text-white/80"><li>✓ No estilo exato da banca</li><li>✓ Gabarito comentado</li><li>✓ Vira crédito p/ assinatura</li></ul>
-             <BillingCheckoutButton planCode="premium_one_time" className="mt-6 w-full rounded-full bg-white text-black py-3 font-medium">Comprar por R$14,90</BillingCheckoutButton>
+             {commercialBillingLive ? <BillingCheckoutButton planCode="premium_one_time" className="mt-6 w-full rounded-full bg-white text-black py-3 font-medium">Comprar por R$14,90</BillingCheckoutButton> : <p className="mt-6 rounded-2xl border border-amber-300/30 bg-amber-500/10 p-3 text-center text-sm text-amber-100">Compra avulsa em homologação.</p>}
           </div>
         </div>
       </section>
