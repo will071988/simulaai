@@ -30,7 +30,7 @@ export function Footer() {
     <footer className="border-t border-white/10 bg-[#070A1A] py-10">
       <div className="mx-auto max-w-6xl px-6 flex flex-col sm:flex-row justify-between gap-4 text-sm text-white/60">
         <span>© 2026 SimulaAí — Simulados com IA. Não somos banca oficial. Fontes: Cebraspe, FGV, AOCP, Cesgranrio.</span>
-         <span className="text-white/80">SimulaAí • dados de fontes públicas</span>
+         <span className="flex flex-wrap gap-4 text-white/80"><Link href="/privacidade" className="hover:text-white">Privacidade</Link><Link href="/termos" className="hover:text-white">Termos</Link><span>SimulaAí • dados de fontes públicas</span></span>
       </div>
     </footer>
   );
