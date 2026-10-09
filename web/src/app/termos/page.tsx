@@ -8,6 +8,7 @@ export const metadata: Metadata = {
 };
 
 export default function TermsPage() {
+  const supportEmail = process.env.NEXT_PUBLIC_SUPPORT_EMAIL || "";
   return <div className="mesh min-h-screen"><Header /><main className="mx-auto max-w-4xl px-6 py-10">
     <h1 className="font-display text-4xl font-bold">Termos de Uso</h1>
     <p className="mt-2 text-sm text-white/50">Última atualização: 09/10/2026</p>
@@ -20,6 +21,7 @@ export default function TermsPage() {
       <section><h2 className="text-xl font-bold">6. Planos pagos</h2><p className="mt-2">Preços, periodicidade, renovação, cancelamento e eventuais reembolsos serão apresentados antes da contratação. Nenhuma cobrança deve ocorrer sem fluxo de pagamento explícito e confirmação do usuário.</p></section>
       <section><h2 className="text-xl font-bold">7. Disponibilidade</h2><p className="mt-2">A plataforma pode passar por manutenção, indisponibilidade de fornecedores ou alterações técnicas. Não é garantida disponibilidade ininterrupta.</p></section>
       <section><h2 className="text-xl font-bold">8. Encerramento</h2><p className="mt-2">Contas podem ser suspensas em caso de fraude, abuso ou violação relevante destes termos, respeitadas as obrigações legais aplicáveis.</p></section>
+      <section><h2 className="text-xl font-bold">9. Contato e suporte</h2><p className="mt-2">{supportEmail ? <>O canal de suporte do SimulaAí é <a href={`mailto:${supportEmail}`} className="font-bold text-violet-700">{supportEmail}</a>.</> : <>O lançamento comercial permanece bloqueado até que um canal de suporte seja configurado.</>}</p></section>
     </div>
   </main><Footer /></div>;
 }
