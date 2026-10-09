@@ -20,8 +20,8 @@ assert.match(stripe, /AbortSignal\.timeout/);
 const checkout = read("src/app/api/billing/checkout/route.ts");
 assert.match(checkout, /authenticatedUser/);
 assert.match(checkout, /client_reference_id/);
-assert.match(checkout, /subscription_data\[metadata\]\[user_id\]/);
-assert.match(checkout, /payment_intent_data\[metadata\]\[user_id\]/);
+assert.match(checkout, /locked_prefilled_email/);
+assert.doesNotMatch(checkout, /STRIPE_SECRET_KEY/);
 
 const webhook = read("src/app/api/billing/webhook/route.ts");
 assert.match(webhook, /verifyStripeSignature/);
