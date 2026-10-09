@@ -100,6 +100,25 @@ export default function ContaPage() {
     setBusy(false);
   }
 
+  async function exportAccountData() {
+    if (!session) return;
+    setBusy(true); setError(""); setNotice("");
+    try {
+      const response = await fetch("/api/account/export", { headers: { authorization: `Bearer ${session.access_token}` }, cache: "no-store" });
+      if (!response.ok) { setError("Não foi possível exportar seus dados."); return; }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = "simulaai-dados.json";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+      setNotice("Exportação concluída.");
+    } finally { setBusy(false); }
+  }
+
   async function deleteAccount() {
     if (!session || deletePhrase !== "EXCLUIR") return;
     setBusy(true); setError(""); setNotice("");
@@ -127,7 +146,10 @@ export default function ContaPage() {
           <button disabled={busy || nome.trim().length < 2} className="mt-5 rounded-full bg-zinc-900 px-6 py-3 font-bold text-white disabled:opacity-50">Salvar perfil</button>
         </form>
         <div className="glass rounded-3xl p-6">
-          <h2 className="font-display text-xl font-bold">Sessão</h2>
+          <h2 className="font-display text-xl font-bold">Dados e sessão</h2>
+          <p className="mt-1 text-sm text-white/60">Baixe uma cópia dos dados associados à sua conta em JSON.</p>
+          <button onClick={exportAccountData} disabled={busy} className="mt-4 rounded-full bg-white px-6 py-3 font-bold text-black disabled:opacity-50">Exportar meus dados</button>
+          <h3 className="mt-6 font-display text-lg font-bold">Sessão</h3>
           <p className="mt-1 text-sm text-white/60">Sua sessão é renovada automaticamente e pode ser encerrada neste dispositivo.</p>
           <button onClick={logout} disabled={busy} className="mt-4 rounded-full border border-white/20 px-6 py-3 font-bold hover:bg-white hover:text-black disabled:opacity-50">Sair da conta</button>
         </div>

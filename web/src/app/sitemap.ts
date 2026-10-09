@@ -11,6 +11,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${siteUrl}/concursos`, changeFrequency: "hourly", priority: 0.9 },
     { url: `${siteUrl}/simulados`, changeFrequency: "weekly", priority: 0.8 },
     { url: `${siteUrl}/quiz`, changeFrequency: "monthly", priority: 0.6 },
+    { url: `${siteUrl}/privacidade`, changeFrequency: "yearly", priority: 0.3 },
+    { url: `${siteUrl}/termos`, changeFrequency: "yearly", priority: 0.3 },
   ];
 
   try {
