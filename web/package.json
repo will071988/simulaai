@@ -53,7 +53,8 @@
     "test:e2e:1.4": "tsx scripts/e2e-1.4-real.ts",
     "recalculate:hot": "tsx scripts/recalculate-hot.ts",
     "backfill:enrichment": "tsx scripts/backfill-enrichment.ts",
-    "test:2.9": "tsx scripts/validate-2.9.ts"
+    "test:2.9": "tsx scripts/validate-2.9.ts",
+    "test:3.0": "tsx scripts/validate-3.0.ts"
   },
   "dependencies": {
     "@napi-rs/canvas": "0.1.80",
