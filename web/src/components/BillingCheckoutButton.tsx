@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { supabase } from "@/lib/supabase";
 import type { BillingPlanCode } from "@/lib/billing/plans";
 
@@ -10,7 +10,7 @@ export function BillingCheckoutButton({
   className,
 }: {
   planCode: BillingPlanCode;
-  children: React.ReactNode;
+  children: ReactNode;
   className?: string;
 }) {
   const [busy, setBusy] = useState(false);
