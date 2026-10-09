@@ -1,14 +1,14 @@
 -- Sprint 3.4 — Stripe billing persistence
 -- Service-role only. Public/authenticated clients receive no direct table grants.
 
-create table if not exists public.billing_customers (
+create table if not exists public.simulaai_billing_customers (
   user_id uuid primary key references auth.users(id) on delete cascade,
   stripe_customer_id text not null unique,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
-create table if not exists public.billing_subscriptions (
+create table if not exists public.simulaai_billing_subscriptions (
   stripe_subscription_id text primary key,
   user_id uuid not null references auth.users(id) on delete cascade,
   stripe_customer_id text not null,
@@ -20,10 +20,10 @@ create table if not exists public.billing_subscriptions (
   updated_at timestamptz not null default now()
 );
 
-create index if not exists billing_subscriptions_user_id_idx
-  on public.billing_subscriptions(user_id);
+create index if not exists simulaai_billing_subscriptions_user_id_idx
+  on public.simulaai_billing_subscriptions(user_id);
 
-create table if not exists public.billing_purchases (
+create table if not exists public.simulaai_billing_purchases (
   stripe_checkout_session_id text primary key,
   user_id uuid not null references auth.users(id) on delete cascade,
   stripe_customer_id text,
@@ -34,21 +34,21 @@ create table if not exists public.billing_purchases (
   created_at timestamptz not null default now()
 );
 
-create index if not exists billing_purchases_user_id_idx
-  on public.billing_purchases(user_id);
+create index if not exists simulaai_billing_purchases_user_id_idx
+  on public.simulaai_billing_purchases(user_id);
 
-create table if not exists public.billing_webhook_events (
+create table if not exists public.simulaai_billing_webhook_events (
   stripe_event_id text primary key,
   event_type text not null,
   processed_at timestamptz not null default now()
 );
 
-alter table public.billing_customers enable row level security;
-alter table public.billing_subscriptions enable row level security;
-alter table public.billing_purchases enable row level security;
-alter table public.billing_webhook_events enable row level security;
+alter table public.simulaai_billing_customers enable row level security;
+alter table public.simulaai_billing_subscriptions enable row level security;
+alter table public.simulaai_billing_purchases enable row level security;
+alter table public.simulaai_billing_webhook_events enable row level security;
 
-revoke all on table public.billing_customers from anon, authenticated;
-revoke all on table public.billing_subscriptions from anon, authenticated;
-revoke all on table public.billing_purchases from anon, authenticated;
-revoke all on table public.billing_webhook_events from anon, authenticated;
+revoke all on table public.simulaai_billing_customers from anon, authenticated;
+revoke all on table public.simulaai_billing_subscriptions from anon, authenticated;
+revoke all on table public.simulaai_billing_purchases from anon, authenticated;
+revoke all on table public.simulaai_billing_webhook_events from anon, authenticated;
