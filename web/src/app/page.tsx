@@ -1,7 +1,20 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { Header, Footer } from "@/components/Header";
 import { trilhas } from "@/lib/mock";
 import { DeferredHotConcursosMap } from "@/components/DeferredHotConcursosMap";
+
+export const metadata: Metadata = {
+  title: "SimulaAí — Simulados que te aprovam",
+  description: "Simulados para concursos públicos no estilo da banca, com radar de editais, desempenho e correção assistida por IA.",
+  alternates: { canonical: "/" },
+  openGraph: {
+    title: "SimulaAí — Simulados que te aprovam",
+    description: "Treine para concursos públicos, acompanhe editais e evolua com simulados no estilo da banca.",
+    url: "/",
+    type: "website",
+  },
+};
 
 export default function Home() {
   return (
