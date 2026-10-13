@@ -17,13 +17,16 @@ if [[ "$RESTORE_DB_URL" == *"$PRODUCTION_REF"* ]]; then
   exit 1
 fi
 
+if [[ ! -s "$BACKUP_FILE.sha256" ]]; then
+  echo "Restore drill refused: a nonempty backup checksum file is required." >&2
+  exit 1
+fi
+
 for cmd in openssl tar psql sha256sum; do
   command -v "$cmd" >/dev/null 2>&1 || { echo "Missing required command: $cmd" >&2; exit 1; }
 done
 
-if [[ -f "$BACKUP_FILE.sha256" ]]; then
-  sha256sum -c "$BACKUP_FILE.sha256"
-fi
+sha256sum -c "$BACKUP_FILE.sha256"
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT

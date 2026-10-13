@@ -47,6 +47,10 @@ O diretório `backups/` deve permanecer fora do Git.
 
 Nunca usar a base de produção.
 
+O arquivo de checksum `.sha256` deve acompanhar o backup. O restore drill
+recusa arquivos de checksum ausentes ou vazios e interrompe a execução se a
+verificação SHA-256 falhar, antes de descriptografar ou conectar ao banco alvo.
+
 Crie um projeto/banco descartável e execute:
 
 ```bash
