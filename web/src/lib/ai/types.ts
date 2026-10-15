@@ -24,6 +24,8 @@ export type AIResult<T> = {
   jsonClassification?: string;
   parseSuccess?: boolean;
   bodyPresent?: boolean;
+  rateLimit?: { retryAfter?: string; limit?: string; remaining?: string; reset?: string };
+  upstreamError?: { code?: string; message?: string };
   success?: boolean;
   requestedModel?: string;
   attempts?: Array<{ provider: string; requestedModel: string; effectiveModel: string; errorCode?: string; latencyMs: number }>;

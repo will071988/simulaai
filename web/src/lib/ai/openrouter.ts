@@ -8,6 +8,36 @@ import { validateLiveFreeModel } from "./openrouterModels";
 
 const URL = "https://openrouter.ai/api/v1/chat/completions";
 
+function sanitizeUpstreamText(value: unknown, maxLength: number): string | undefined {
+  if (typeof value !== "string" && typeof value !== "number") return undefined;
+  let sanitized = String(value).replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/Bearer\s+\S+/gi, "Bearer [REDACTED]").replace(/sk-or-v1-[A-Za-z0-9_-]+/g, "[REDACTED]");
+  const key = process.env.OPENROUTER_API_KEY;
+  if (key) sanitized = sanitized.split(key).join("[REDACTED]");
+  sanitized = sanitized.trim().slice(0, maxLength);
+  return sanitized || undefined;
+}
+
+async function diagnoseRateLimit(response: Response) {
+  const header = (name: string) => sanitizeUpstreamText(response.headers.get(name), 120);
+  const rateLimit = {
+    retryAfter: header("retry-after"),
+    limit: header("x-ratelimit-limit"),
+    remaining: header("x-ratelimit-remaining"),
+    reset: header("x-ratelimit-reset"),
+  };
+  let upstreamError: { code?: string; message?: string } | undefined;
+  try {
+    const payload = await response.json() as { error?: { code?: unknown; message?: unknown } };
+    const code = sanitizeUpstreamText(payload?.error?.code, 80);
+    const message = sanitizeUpstreamText(payload?.error?.message, 240);
+    if (code || message) upstreamError = { code, message };
+  } catch { await response.body?.cancel(); }
+  return {
+    ...(Object.values(rateLimit).some(Boolean) ? { rateLimit } : {}),
+    ...(upstreamError ? { upstreamError } : {}),
+  };
+}
+
 export function parseOpenRouterJson<T>(raw: string): T {
   const trimmed = raw.trim();
   const fenced = trimmed.match(/^```(?:json)?\s*\r?\n([\s\S]*?)\r?\n```$/i)?.[1]?.trim();
@@ -65,8 +95,8 @@ export class OpenRouterProvider implements AIProvider {
       }, permit);
       httpStatus = res.status;
       if (!res.ok) {
+        if (res.status === 429) return { ok: false, provider: this.name, model: this.model, effectiveModel, httpStatus, latencyMs: Date.now() - start, errorCode: "429", ...await diagnoseRateLimit(res) };
         await res.body?.cancel();
-        if (res.status === 429) return { ok: false, provider: this.name, model: this.model, effectiveModel, httpStatus, latencyMs: Date.now() - start, errorCode: "429" };
         this.cb.recordFailure();
         return { ok: false, provider: this.name, model: this.model, effectiveModel, httpStatus, latencyMs: Date.now() - start, errorCode: res.status === 404 ? "MODEL_UNAVAILABLE" : httpError(res.status), ...(res.status === 408 || res.status === 504 ? { timeoutSource: "OPENROUTER_OR_UPSTREAM" as const } : {}) };
       }
