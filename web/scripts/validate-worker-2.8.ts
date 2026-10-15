@@ -43,6 +43,13 @@ async function main() {
     globalThis.fetch = async (input) => { if (String(input).endsWith("/models")) return Response.json(catalog); throw new DOMException("timeout", "TimeoutError"); };
     const timeout = await new OpenRouterProvider().generate({ taskType: "EXTRACT_CONCURSO", prompt: "fixture", input: {}, promptVersion: "fixture" }, async () => true);
     assert.equal(timeout.errorCode, "TIMEOUT"); assert.equal(timeout.timeoutSource, "CLIENT_ABORT_SIGNAL");
+    globalThis.fetch = async (input) => String(input).endsWith("/models") ? Response.json(catalog) : Response.json({ error: { code: 429, message: "Quota Bearer fixture-only sk-or-v1-secret\nexceeded" } }, { status: 429, headers: { "retry-after": "30", "x-ratelimit-limit": "50", "x-ratelimit-remaining": "0", "x-ratelimit-reset": "123", authorization: "Bearer fixture-only", "set-cookie": "secret=true" } });
+    const rateLimited = await new OpenRouterProvider().generate({ taskType: "EXTRACT_CONCURSO", prompt: "fixture", input: {}, promptVersion: "fixture" }, async () => true);
+    assert.equal(rateLimited.httpStatus, 429); assert.equal(rateLimited.errorCode, "429");
+    assert.deepEqual(rateLimited.rateLimit, { retryAfter: "30", limit: "50", remaining: "0", reset: "123" });
+    assert.deepEqual(rateLimited.upstreamError, { code: "429", message: "Quota Bearer [REDACTED] [REDACTED] exceeded" });
+    const diagnostics = JSON.stringify(rateLimited);
+    assert.doesNotMatch(diagnostics, /fixture-only|sk-or-v1-secret|authorization|set-cookie|secret=true/i);
   } finally { globalThis.fetch = oldFetch; if (oldKey === undefined) delete process.env.OPENROUTER_API_KEY; else process.env.OPENROUTER_API_KEY = oldKey; }
   console.log("worker limits, auth, strict JSON and provider diagnostics passed");
 }
