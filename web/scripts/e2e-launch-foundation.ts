@@ -49,6 +49,8 @@ async function main() {
     assert.equal((await fetch(`${base}/api/admin/content/starter`, { method: "POST" })).status, 401);
     assert.equal((await fetch(`${base}/api/admin/content/starter`, { method: "POST", headers: { authorization: `Bearer ${token(learner)}` } })).status, 403);
     assert.equal((await fetch(`${base}/api/admin/content/starter`, { method: "POST", headers: { authorization: `Bearer ${token(admin)}`, "content-type": "application/json" }, body: "{}" })).status, 400);
+    const published = await fetch(`${base}/api/admin/content/starter`, { method: "POST", headers: { authorization: `Bearer ${token(admin)}`, "content-type": "application/json" }, body: JSON.stringify({ action: "PUBLISH_STARTER_BANK", revision: "fundamentos-v1" }) });
+    assert.equal(published.status, 200); assert.equal((await published.json()).data.alreadyPublished, 30);
     const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
     await context.route("https://**.supabase.co/**", (route) => route.abort());
     await context.addInitScript(({ userId, accessToken }) => { localStorage.setItem("sb-127-auth-token", JSON.stringify({ access_token: accessToken, refresh_token: "fixture-refresh", expires_at: Math.floor(Date.now() / 1000) + 3600, expires_in: 3600, token_type: "bearer", user: { id: userId, email: `${userId}@fixture.test`, aud: "authenticated", app_metadata: {}, user_metadata: {} } })); }, { userId: learner, accessToken: token(learner) });

@@ -7,6 +7,7 @@ Foco atual: treino com questões publicadas, nota calculada no servidor, coment�
 
 - O banco geral aceita questões publicadas sem vínculo com concurso; questões de concursos não publicáveis ou mesclados continuam excluídas.
 - Home e catálogo apresentam disponibilidade real. Links antigos de trilhas demonstrativas redirecionam para o gerador; rankings e comentários fictícios não fazem parte do fluxo público.
+- A home usa cache de até 60 segundos apenas de totais e disciplinas públicos, invalidado na publicação administrativa. Geração e correção continuam consultando os gates atuais, sem cache de gabaritos ou dados pessoais.
 - O pacote `fundamentos-v1` contém 30 exercícios de matemática e lógica, identificados como `QUESTAO_IA`/`AI_GENERATED`, sem atribuição a banca. Os gabaritos têm verificações aritméticas/tabelas-verdade; os comentários são associados ao cache validado.
 - Publicação do pacote exige administrador autenticado e percorre `DRAFT → VALIDATED → PUBLISHED` pelos gates existentes. A execução é idempotente e preserva conteúdo divergente ou rejeitado.
 - O banco geral não representa prova oficial nem comprova cobertura de uma trilha de concurso.

@@ -5,6 +5,8 @@ import { supabaseService } from "@/lib/supabase-server";
 import { publishStarterBank } from "@/lib/questions/publish-starter";
 import { STARTER_BANK_REVISION } from "@/lib/questions/starter-bank";
 import { observeApiRoute } from "@/lib/observability/operations";
+import { revalidatePath, revalidateTag } from "next/cache";
+import { PRACTICE_CATALOG_TAG } from "@/lib/simulados/practice-catalog";
 
 const noStore = { "Cache-Control": "private, no-store" };
 const PublishSchema = z.object({ action: z.literal("PUBLISH_STARTER_BANK"), revision: z.literal(STARTER_BANK_REVISION) }).strict();
@@ -15,6 +17,8 @@ async function handlePOST(request: Request) {
   if (!PublishSchema.safeParse(input).success) return NextResponse.json({ error: "INVALID_CONTENT_RELEASE" }, { status: 400, headers: noStore });
   try {
     const data = await publishStarterBank(supabaseService(), access.user.id);
+    revalidateTag(PRACTICE_CATALOG_TAG, { expire: 0 });
+    revalidatePath("/");
     console.info(JSON.stringify({ event: "content_release_completed", actorId: access.user.id, ...data }));
     return NextResponse.json({ data }, { headers: noStore });
   } catch (error) {

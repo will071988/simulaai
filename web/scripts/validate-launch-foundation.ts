@@ -5,6 +5,7 @@ import { publishStarterBank } from "../src/lib/questions/publish-starter";
 import { loadPublishedQuestionPool, publishedQuestionOptions } from "../src/lib/simulados/published-pool";
 import { matchesQuestionFilters } from "../src/lib/simulados/filters";
 import { createQuestionBankFixture } from "./support/questionBankFixture";
+import { loadPublicPracticeCatalog } from "../src/lib/simulados/practice-catalog";
 
 async function main() {
   const bank = starterBank();
@@ -26,6 +27,10 @@ async function main() {
     const pool = await loadPublishedQuestionPool(service);
     assert.equal(pool.questions.length, before.questions.length + 30);
     assert.equal(pool.contests.length, 0);
+    const catalog = await loadPublicPracticeCatalog(service);
+    assert.equal(catalog.totalQuestions, pool.questions.length);
+    assert.deepEqual(Object.keys(catalog).sort(), ["disciplines", "totalQuestions"]);
+    assert.doesNotMatch(JSON.stringify(catalog), /enunciado|alternativas|resposta_correta|gabarito|user_id|score/);
     const options = publishedQuestionOptions(pool);
     assert.equal(options.filter((question) => matchesQuestionFilters(question, {})).length, pool.questions.length);
     assert.equal(options.filter((question) => matchesQuestionFilters(question, { concursoId: "22222222-2222-4222-8222-222222222222" })).length, 0);
