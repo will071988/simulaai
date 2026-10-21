@@ -1,205 +1,41 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Header, Footer } from "@/components/Header";
-import { trilhas } from "@/lib/mock";
 import { DeferredHotConcursosMap } from "@/components/DeferredHotConcursosMap";
 import { BillingCheckoutButton } from "@/components/BillingCheckoutButton";
+import { loadPublishedQuestionPool } from "@/lib/simulados/published-pool";
 
+export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
-  title: "SimulaAí — Simulados que te aprovam",
-  description: "Simulados para concursos públicos no estilo da banca, com radar de editais, desempenho e correção assistida por IA.",
+  title: "SimulaAí — Treino com questões e correção comentada",
+  description: "Pratique com questões publicadas, correção no servidor e comentários validados. Acompanhe seu desempenho e consulte fontes oficiais de concursos.",
   alternates: { canonical: "/" },
-  openGraph: {
-    title: "SimulaAí — Simulados que te aprovam",
-    description: "Treine para concursos públicos, acompanhe editais e evolua com simulados no estilo da banca.",
-    url: "/",
-    type: "website",
-  },
+  openGraph: { title: "SimulaAí — Treine e acompanhe sua evolução", description: "Questões publicadas, resultados reais e comentários validados para organizar seus estudos.", url: "/", type: "website" },
 };
 
-export default function Home() {
+export default async function Home() {
   const commercialBillingLive = String(process.env.STRIPE_LIVEMODE || "").toLowerCase() === "true";
-  return (
-    <div className="mesh min-h-screen">
-      <Header />
-
-      {/* HERO */}
-      <section className="relative overflow-hidden">
-        <div className="absolute inset-0 grid-pattern opacity-30 pointer-events-none" />
-        {/* orbs */}
-        <div className="absolute -top-20 -right-20 h-[500px] w-[500px] rounded-full bg-gradient-to-br from-violet-600/30 to-cyan-400/30 blur-[80px] pointer-events-none animate-float" />
-        <div className="absolute top-40 -left-20 h-[400px] w-[400px] rounded-full bg-gradient-to-br from-pink-500/20 to-orange-400/20 blur-[70px] pointer-events-none animate-float-delayed" />
-
-        <div className="relative mx-auto max-w-6xl px-6 pt-12 pb-10 sm:pt-16">
-          <div className="inline-flex items-center gap-2 glass rounded-full px-4 py-2 text-xs">
-            <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-            Coletor IA em monitoramento • dados atualizados conforme as fontes
-            <span className="hidden sm:inline px-2 py-0.5 rounded-full bg-white text-black font-bold">NOVO</span>
-          </div>
-
-          <div className="mt-6 grid lg:grid-cols-[1.1fr_0.9fr] gap-8 items-center">
-            <div>
-              <h1 className="font-display font-bold tracking-tight text-4xl sm:text-5xl lg:text-6xl leading-[0.95]">
-                Simulados que<br />
-                <span className="bg-gradient-to-r from-cyan-300 via-violet-300 to-fuchsia-300 bg-clip-text text-transparent">te aprovam</span><br />
-                no estilo da banca.
-              </h1>
-              <p className="mt-4 text-lg text-white/70 max-w-xl leading-relaxed">
-                Nada de curso arrastado. Treine prova real cronometrada, ganhe correção comentada por IA e descubra exatamente o que revisar antes do edital sair.
-              </p>
-              <div className="mt-6 flex flex-wrap gap-3">
-                <Link href="/simulados" className="px-7 py-3.5 rounded-full bg-white text-black font-semibold hover:bg-zinc-100 transition glow-cyan">Fazer simulado grátis →</Link>
-                <Link href="/quiz" className="px-7 py-3.5 rounded-full glass font-medium hover:bg-white/10 transition">Não sei qual concurso escolher</Link>
-              </div>
-              <div className="mt-6 flex items-center gap-6 text-sm">
-                <span className="flex -space-x-2"><span className="h-8 w-8 rounded-full bg-gradient-to-br from-violet-500 to-cyan-400 border-2 border-[#070A1A]" /><span className="h-8 w-8 rounded-full bg-gradient-to-br from-orange-400 to-pink-500 border-2 border-[#070A1A]" /><span className="h-8 w-8 rounded-full bg-gradient-to-br from-emerald-400 to-cyan-400 border-2 border-[#070A1A]" /></span>
-                 <span className="text-white/60">Treine grátis • acompanhe seu desempenho</span>
-                <span className="hidden sm:inline px-3 py-1 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/20 text-xs">Cronômetro + Ranking</span>
-              </div>
-            </div>
-
-            {/* mock preview card */}
-            <div className="relative">
-              <div className="absolute inset-0 bg-gradient-to-br from-violet-600/30 to-cyan-400/30 blur-2xl rounded-[32px]" />
-              <div className="relative glass rounded-[28px] p-6 sm:p-7">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold tracking-widest text-white/60">SIMULADO AO VIVO • PF</span>
-                  <span className="text-xs font-mono px-3 py-1 rounded-full bg-white text-black">58:42 restantes</span>
-                </div>
-                <div className="mt-4 rounded-2xl bg-white text-zinc-900 p-5">
-                  <p className="text-xs font-bold text-violet-600">Q3 • RACIOCÍNIO LÓGICO • Cebraspe</p>
-                  <p className="mt-2 font-medium leading-snug">“Se P então Q” equivale a “Se não Q então não P”. Julgue:</p>
-                  <div className="mt-4 space-y-2">
-                    <div className="rounded-xl border-2 border-violet-600 bg-violet-50 p-3 text-sm font-medium">A) Certo ✓</div>
-                    <div className="rounded-xl border p-3 text-sm text-zinc-500">B) Errado</div>
-                  </div>
-                  <div className="mt-3 rounded-xl bg-emerald-50 border border-emerald-200 p-3 text-xs text-emerald-800">Correção IA: mandou bem! Equivalência contrapositiva. Próximo: revise tabela-verdade.</div>
-                </div>
-                <div className="mt-4 flex gap-2 text-xs">
-                  <span className="px-3 py-2 rounded-full bg-white text-black font-semibold">65% acertos médio</span>
-                  <span className="px-3 py-2 rounded-full glass">Top 12% no ranking</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* métricas */}
-          <div className="mt-10 grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {[
-              ["6", "trilhas quentes"],
-               ["6", "trilhas disponíveis"],
-               ["IA", "correção comentada"],
-               ["Grátis", "comece agora"],
-            ].map(([n,l])=>(
-              <div key={n} className="glass rounded-2xl p-4 text-center">
-                <div className="font-display font-bold text-2xl">{n}</div><div className="text-xs text-white/60">{l}</div>
-              </div>
-            ))}
-          </div>
-        </div>
+  const pool = await loadPublishedQuestionPool(undefined, AbortSignal.timeout(2500)).catch(() => null);
+  const disciplines = pool ? [...new Set(pool.questions.map((question) => question.disciplina))].sort((a, b) => a.localeCompare(b, "pt-BR")) : [];
+  return <div className="mesh min-h-screen"><Header />
+    <main>
+      <section className="relative overflow-hidden"><div className="grid-pattern pointer-events-none absolute inset-0" /><div className="relative mx-auto max-w-6xl px-6 py-14 sm:py-20">
+        <p className="inline-flex rounded-full border border-cyan-300/25 bg-cyan-300/10 px-4 py-2 text-sm text-cyan-100">Beta gratuito · banco de questões em expansão</p>
+        <h1 className="font-display mt-6 max-w-4xl text-4xl font-bold tracking-tight sm:text-6xl">Treine com questões.<br /><span className="bg-gradient-to-r from-cyan-300 via-violet-300 to-fuchsia-300 bg-clip-text text-transparent">Acompanhe resultados reais.</span></h1>
+        <p className="mt-5 max-w-2xl text-lg leading-relaxed text-white/70">Monte seu treino, responda no seu ritmo e receba uma nota calculada no servidor. Os comentários são exibidos somente quando passam pela validação de conteúdo.</p>
+        <div className="mt-7 flex flex-wrap gap-3"><Link href="/simulados#gerador" className="glow-cyan rounded-full bg-white px-7 py-3.5 font-bold text-black">Começar treino grátis →</Link><Link href="/concursos" className="glass rounded-full px-7 py-3.5 font-semibold">Consultar concursos e editais</Link></div>
+        <p className="mt-5 text-sm text-white/60">Entre na sua conta antes de iniciar para salvar os resultados no histórico.</p>
+        <div className="mt-10 grid gap-3 sm:grid-cols-3">{[[pool ? String(pool.questions.length) : "—", "questões publicadas disponíveis"], [pool ? String(disciplines.length) : "—", "disciplinas com conteúdo"], ["No servidor", "correção do gabarito"]].map(([value, label]) => <div key={label} className="glass rounded-2xl p-5"><p className="font-display text-3xl font-bold">{value}</p><p className="mt-1 text-sm text-white/60">{label}</p></div>)}</div>
+      </div></section>
+      <section id="trilhas" className="mx-auto max-w-6xl px-6 py-8"><h2 className="font-display text-3xl font-bold">Conteúdo disponível para treinar</h2><p className="mt-2 text-white/65">Escolha uma disciplina do banco publicado. O treino geral reúne conteúdos de fundamentos; não é uma prova oficial de uma banca.</p>
+        {disciplines.length ? <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{disciplines.slice(0, 6).map((disciplina) => <Link key={disciplina} href={`/simulados?disciplina=${encodeURIComponent(disciplina)}#gerador`} className="glass rounded-3xl p-6 transition hover:bg-white/10"><h3 className="font-display text-xl font-bold">{disciplina}</h3><p className="mt-2 text-sm text-white/65">{pool!.questions.filter((question) => question.disciplina === disciplina).length} questões publicadas</p><span className="mt-5 inline-block font-bold text-cyan-200">Treinar esta disciplina →</span></Link>)}</div> : <p role="status" className="glass mt-6 rounded-3xl p-6 text-white/70">O banco está sendo atualizado. Consulte as opções de treino ou os concursos publicados.</p>}
       </section>
-
-      {/* TRILHAS */}
-      <section className="mx-auto max-w-6xl px-6 pt-6">
-        <div className="glass rounded-[24px] p-5 flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h3 className="font-display font-bold">Não sabe qual escolher?</h3>
-            <p className="text-sm text-white/60">Faça o quiz e descubra quais concursos combinam mais com seu perfil.</p>
-          </div>
-          <Link href="/quiz" className="rounded-full bg-white text-black px-6 py-3 font-bold hover:bg-zinc-100 transition">Fazer quiz — 2 min →</Link>
-        </div>
-      </section>
-      <section id="trilhas" className="mx-auto max-w-6xl px-6 py-10">
-        <div className="flex items-end justify-between">
-          <h2 className="font-display font-bold text-3xl">Trilhas quentes — set/2026</h2>
-          <Link href="/simulados" className="hidden sm:inline text-sm text-white/70 hover:text-white">Ver todos →</Link>
-        </div>
-        <div className="mt-6 grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {trilhas.map(t=>(
-            <Link key={t.sigla} href={`/simulados/${t.slug}`} className="group relative overflow-hidden rounded-[24px] p-[1px] bg-gradient-to-br from-white/20 to-white/5 hover:from-white/30 hover:to-white/10 transition">
-              <div className="rounded-[23px] bg-[#0F1233] p-5 h-full relative overflow-hidden">
-                <div className={`absolute -top-16 -right-16 h-40 w-40 rounded-full bg-gradient-to-br ${t.cor} opacity-30 blur-2xl group-hover:opacity-40 transition`} />
-                <span className={`inline-block rounded-full bg-gradient-to-br ${t.cor} px-3 py-1 text-xs font-black text-white`}>{t.sigla} • {t.banca}</span>
-                <h3 className="mt-3 font-semibold text-lg">{t.nome}</h3>
-                <p className="text-sm text-white/60">{t.vagas} vagas • {t.banca}</p>
-                <span className="mt-4 inline-flex items-center gap-2 rounded-full bg-white text-black px-4 py-2 text-sm font-semibold group-hover:gap-3 transition-all">Iniciar grátis →</span>
-              </div>
-            </Link>
-          ))}
-        </div>
-      </section>
-
-      {/* MAPA CONCURSOS QUENTES */}
-      <section className="mx-auto max-w-6xl px-6 py-6">
-        <div className="glass rounded-[28px] p-6 sm:p-8">
-          <h2 className="font-display font-bold text-2xl">Mapa dos Concursos Quentes</h2>
-          <p className="text-sm text-white/60 mt-1">Concursos em alta pelo Brasil — dados do Supabase, hot_score determinístico.</p>
-          <div className="mt-6">
-            <DeferredHotConcursosMap />
-          </div>
-        </div>
-      </section>
-
-      {/* COMO FUNCIONA */}
-      <section className="mx-auto max-w-6xl px-6 py-6">
-        <div className="grid md:grid-cols-3 gap-4">
-          {[
-            ["01", "Radar de concursos", "Acompanhe concursos com dados de fontes públicas e veja os editais relevantes."],
-            ["02", "Prova cronometrada", "Faça no tempo real, com ranking, estatísticas e controle de ansiedade."],
-            ["03", "Correção que ensina", "IA explica pegadinha da banca, tema fraco e sugere o próximo simulado."],
-          ].map(([n,t,d])=>(
-            <div key={n} className="glass rounded-3xl p-6">
-              <div className="h-10 w-10 rounded-2xl bg-white text-black grid place-items-center font-black">{n}</div>
-              <h3 className="mt-4 font-display font-semibold text-lg">{t}</h3>
-              <p className="mt-2 text-sm text-white/65 leading-relaxed">{d}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* RADAR */}
-      <section id="radar" className="mx-auto max-w-6xl px-6 py-6">
-        <div className="rounded-[28px] bg-white text-zinc-900 p-6 sm:p-8">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <h2 className="font-display font-bold text-2xl">Radar de editais — coletor diário</h2>
-             <span className="text-xs px-3 py-1 rounded-full bg-zinc-900 text-white">Dados das fontes monitoradas</span>
-          </div>
-           <p className="mt-6 text-sm text-zinc-600">O mapa acima mostra os concursos quentes disponíveis no banco de dados. Consulte o edital oficial antes de tomar qualquer decisão.</p>
-          <Link href="/simulados" className="mt-6 inline-block rounded-full bg-zinc-900 text-white px-6 py-3 font-medium">Gerar simulado do edital →</Link>
-        </div>
-      </section>
-
-      {/* PLANOS */}
-      <section id="planos" className="mx-auto max-w-6xl px-6 py-10">
-        <h2 className="font-display font-bold text-3xl text-center">Um preço jovial, sem pegadinha</h2>
-        <p className="text-center text-white/60 mt-2">Até R$30. Cancele quando quiser. Comece grátis.</p>
-        <div className="mt-8 grid md:grid-cols-3 gap-4 max-w-5xl mx-auto">
-          <div className="glass rounded-[24px] p-6">
-            <h3 className="font-bold">Grátis</h3><p className="text-3xl font-black mt-2">R$0</p><p className="text-sm text-white/60">1 simulado por trilha + 2 correções IA</p>
-            <ul className="mt-4 text-sm space-y-2 text-white/80"><li>✓ Cronômetro</li><li>✓ Nota na hora</li><li>• Paywall no resto</li></ul>
-            <Link href="/simulados" className="mt-6 block text-center rounded-full border border-white/20 py-3 font-medium hover:bg-white hover:text-black transition">Começar grátis</Link>
-          </div>
-          <div className="relative rounded-[24px] p-[1.5px] bg-gradient-to-br from-violet-600 to-cyan-400 glow-violet">
-            <div className="rounded-[22px] bg-[#0F1233] p-6">
-              <span className="text-xs font-black tracking-widest px-3 py-1 rounded-full bg-white text-black">MAIS POPULAR</span>
-              <h3 className="font-bold mt-3">Trilha Ilimitada</h3><p className="text-3xl font-black mt-2">R$29,90<span className="text-base font-normal text-white/60">/mês</span></p><p className="text-sm text-white/60">ou R$299/ano (2 meses grátis)</p>
-              <ul className="mt-4 text-sm space-y-2"><li>✓ Ilimitado na sua trilha</li><li>✓ Correção IA completa</li><li>✓ Ranking + evolução por tema</li><li>✓ Novos simulados toda semana</li></ul>
-               {commercialBillingLive ? <><div className="mt-6 grid gap-2">
-                <BillingCheckoutButton planCode="premium_monthly" className="w-full rounded-full bg-white text-black py-3 font-bold hover:bg-zinc-100 transition">Assinar mensal — R$29,90</BillingCheckoutButton>
-                <BillingCheckoutButton planCode="premium_annual" className="w-full rounded-full border border-white/20 py-3 font-bold hover:bg-white/10 transition">Assinar anual — R$299</BillingCheckoutButton>
-               </div>
-               <p className="text-xs text-center text-white/50 mt-2">Pagamento seguro processado pelo Stripe</p></> : <p className="mt-6 rounded-2xl border border-amber-300/30 bg-amber-500/10 p-3 text-center text-sm text-amber-100">Assinaturas em homologação. O plano grátis permanece disponível.</p>}
-            </div>
-          </div>
-          <div className="glass rounded-[24px] p-6">
-            <h3 className="font-bold">Avulso Final</h3><p className="text-3xl font-black mt-2">R$14,90</p><p className="text-sm text-white/60">Simulado Premium pré-edital</p>
-            <ul className="mt-4 text-sm space-y-2 text-white/80"><li>✓ No estilo exato da banca</li><li>✓ Gabarito comentado</li><li>✓ Vira crédito p/ assinatura</li></ul>
-             {commercialBillingLive ? <BillingCheckoutButton planCode="premium_one_time" className="mt-6 w-full rounded-full bg-white text-black py-3 font-medium">Comprar por R$14,90</BillingCheckoutButton> : <p className="mt-6 rounded-2xl border border-amber-300/30 bg-amber-500/10 p-3 text-center text-sm text-amber-100">Compra avulsa em homologação.</p>}
-          </div>
-        </div>
-      </section>
-
-      <Footer />
-    </div>
-  );
+      <section className="mx-auto grid max-w-6xl gap-4 px-6 py-8 md:grid-cols-3">{[["1", "Personalize", "Selecione o conteúdo e confira quantas questões estão disponíveis para seus filtros."], ["2", "Responda", "Marque suas respostas e finalize o treino para receber a nota do servidor."], ["3", "Revise", "Consulte gabaritos e comentários validados. Com uma conta, acompanhe seu histórico."]].map(([step, title, text]) => <article key={step} className="glass rounded-3xl p-6"><p className="text-sm font-bold text-cyan-200">PASSO {step}</p><h2 className="font-display mt-3 text-xl font-bold">{title}</h2><p className="mt-2 text-sm text-white/65">{text}</p></article>)}</section>
+      <section id="radar" className="mx-auto max-w-6xl px-6 py-8"><div className="glass rounded-[28px] p-6 sm:p-8"><h2 className="font-display text-2xl font-bold">Radar de concursos publicados</h2><p className="mt-2 text-sm text-white/65">Consulte os dados disponíveis e confirme informações no edital oficial. Um concurso pode ainda não ter questões publicadas no banco.</p><div className="mt-6"><DeferredHotConcursosMap /></div><Link href="/concursos" className="mt-5 inline-block text-cyan-200 underline">Ver concursos e fontes oficiais</Link></div></section>
+      <section id="planos" className="mx-auto max-w-6xl px-6 py-10"><h2 className="font-display text-center text-3xl font-bold">Comece pelo beta gratuito</h2><p className="mt-3 text-center text-white/65">Os planos pagos permanecem em homologação até a conclusão dos gates de lançamento.</p><div className="mt-7 grid gap-4 md:grid-cols-3">
+        <article className="glass rounded-3xl p-6"><h3 className="text-xl font-bold">Treino gratuito</h3><p className="mt-3 text-3xl font-black">R$0</p><p className="mt-3 text-sm text-white/65">Banco publicado, nota no servidor e comentários validados quando disponíveis. O catálogo mostra os limites reais de conteúdo.</p><Link href="/simulados" className="mt-6 inline-block rounded-full bg-white px-6 py-3 font-bold text-black">Treinar agora</Link></article>
+        <article className="glass rounded-3xl p-6"><h3 className="text-xl font-bold">Assinatura</h3><p className="mt-3 text-3xl font-black">R$29,90<span className="text-base font-normal">/mês</span></p><p className="mt-2 text-sm text-white/65">Opção anual de R$299. Recursos e condições serão apresentados antes da contratação.</p>{commercialBillingLive ? <div className="mt-5 grid gap-3"><BillingCheckoutButton planCode="premium_monthly" className="w-full rounded-full bg-white py-3 font-bold text-black">Assinar mensal</BillingCheckoutButton><BillingCheckoutButton planCode="premium_annual" className="w-full rounded-full border border-white/30 py-3 font-bold">Assinar anual</BillingCheckoutButton></div> : <p className="mt-5 text-sm text-amber-200">Assinaturas em homologação.</p>}</article>
+        <article className="glass rounded-3xl p-6"><h3 className="text-xl font-bold">Avulso</h3><p className="mt-3 text-3xl font-black">R$14,90</p><p className="mt-3 text-sm text-white/65">A oferta e o conteúdo incluído serão detalhados antes da compra.</p>{commercialBillingLive ? <BillingCheckoutButton planCode="premium_one_time" className="mt-5 w-full rounded-full bg-white py-3 font-bold text-black">Comprar avulso</BillingCheckoutButton> : <p className="mt-5 text-sm text-amber-200">Compra avulsa em homologação.</p>}</article>
+      </div></section>
+    </main><Footer /></div>;
 }

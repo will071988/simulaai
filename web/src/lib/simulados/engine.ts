@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
+import { matchesQuestionFilters } from "./filters";
 
 export const SimuladoModeSchema = z.enum(["RAPIDO", "COMPLETO", "POR_MATERIA", "POR_ASSUNTO", "PROVA_SIMULADA"]);
 export const DifficultySchema = z.enum(["FACIL", "MEDIO", "DIFICIL"]);
@@ -50,10 +51,6 @@ export function requestedQuantity(input: Pick<GenerateSimuladoInput, "mode" | "q
   return input.quantidade ?? modeDefaults[input.mode];
 }
 
-function same(left: string | null, right?: string) {
-  return !right || left?.localeCompare(right, "pt-BR", { sensitivity: "accent" }) === 0;
-}
-
 function rank(seed: string, id: string) {
   return createHash("sha256").update(`${seed}:${id}`).digest("hex");
 }
@@ -66,12 +63,7 @@ function deterministicOrder(candidates: QuestionCandidate[], seed: string, exclu
 
 export function selectQuestions(candidates: QuestionCandidate[], input: GenerateSimuladoInput): QuestionCandidate[] {
   const amount = requestedQuantity(input);
-  const eligible = candidates.filter((candidate) =>
-    (!input.concursoId || candidate.concursoId === input.concursoId) &&
-    same(candidate.cargo, input.cargo) && same(candidate.disciplina, input.disciplina) &&
-    same(candidate.assunto, input.assunto) && same(candidate.banca, input.banca) &&
-    same(candidate.nivel, input.nivel) && (!input.dificuldade || candidate.dificuldade === input.dificuldade)
-  );
+  const eligible = candidates.filter((candidate) => matchesQuestionFilters(candidate, input));
   if (eligible.length < amount) throw new Error(`INSUFFICIENT_QUESTIONS:${eligible.length}:${amount}`);
 
   const seed = input.seed || "simulaai-default-seed";

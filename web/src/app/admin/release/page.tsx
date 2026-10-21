@@ -15,6 +15,9 @@ type Readiness = {
     stripeLivemode: boolean;
     siteUrlHost: string | null;
     supportConfigured: boolean;
+    publishedQuestions: number;
+    trustedExplanationCount: number;
+    contestsWithFullExam: number;
   };
 };
 
@@ -28,6 +31,9 @@ const labels: Record<string, string> = {
   supportConfigured: "Canal de suporte configurado",
   siteUrlConfigured: "URL pública HTTPS configurada",
   freeAiGuard: "Proteção FREE_AI_ONLY ativa",
+  publishedQuestionBank: "Banco real com pelo menos 30 questões elegíveis",
+  trustedExplanations: "Comentários validados para todo o banco elegível",
+  contestQuestionCoverage: "Ao menos um concurso com prova de 30 questões disponível",
 };
 
 export default function ReleaseReadinessPage() {
@@ -90,6 +96,9 @@ export default function ReleaseReadinessPage() {
         <p>Fontes degradadas: {data.snapshot.degradedSources}</p>
         <p>Stripe live: {data.snapshot.stripeLivemode ? "sim" : "não"}</p>
         <p>Host público: {data.snapshot.siteUrlHost || "não configurado"}</p>
+        <p>Questões elegíveis: {data.snapshot.publishedQuestions}</p>
+        <p>Comentários validados: {data.snapshot.trustedExplanationCount}</p>
+        <p>Concursos com prova completa: {data.snapshot.contestsWithFullExam}</p>
       </section>
     </div> : null}
     {error && <p role="alert" className="mt-6 text-red-200">{error}</p>}

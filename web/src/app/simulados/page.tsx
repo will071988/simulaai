@@ -1,59 +1,19 @@
 import Link from "next/link";
-import { simulados } from "@/lib/mock";
 import { Header, Footer } from "@/components/Header";
 import { SimuladoGenerator } from "@/components/SimuladoGenerator";
 
-export default async function SimuladosPage({ searchParams }: { searchParams: Promise<{ concursoId?: string | string[] }> }) {
-  const requested = (await searchParams).concursoId;
-  const requestedContestId = Array.isArray(requested) ? "" : requested;
-  return (
-    <div className="mesh min-h-screen">
-      <Header />
-      <main className="mx-auto max-w-6xl px-6 py-8">
-        <div className="flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <h1 className="font-display font-bold text-4xl">Escolha seu simulado</h1>
-            <p className="mt-2 text-white/65">Faça 1 grátis por trilha. Cronometrado, com ranking e correção IA.</p>
-          </div>
-          <span className="glass rounded-full px-4 py-2 text-xs">6 trilhas • comece grátis</span>
-        </div>
-        <div className="mt-6 glass rounded-[24px] p-5 flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <p className="text-sm font-bold">Está em dúvida?</p>
-            <p className="text-sm text-white/60">Descubra seu perfil em menos de 2 minutos.</p>
-          </div>
-          <Link href="/quiz" className="rounded-full bg-white text-black px-6 py-3 font-bold">Descobrir meu concurso →</Link>
-        </div>
-        <SimuladoGenerator key={requestedContestId ?? "default"} requestedContestId={requestedContestId} />
-
-        <div className="mt-8 grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {simulados.map((s) => (
-            <Link key={s.slug} href={`/simulados/${s.slug}`} className="group rounded-[24px] p-[1px] bg-gradient-to-br from-white/15 to-white/5 hover:from-white/25 hover:to-white/10 transition">
-              <div className="rounded-[23px] bg-[#0F1233] p-6 h-full">
-                <div className={`h-1 w-full rounded-full bg-gradient-to-r ${s.cor} opacity-80`} />
-                <span className={`mt-4 inline-block text-xs font-black px-3 py-1 rounded-full bg-gradient-to-r ${s.cor} text-white`}>{s.banca} • {s.orgao} • {s.nivel}</span>
-                <h2 className="mt-3 font-display font-semibold text-lg leading-tight">{s.titulo}</h2>
-                <p className="text-sm text-white/60 mt-1">{s.questoes.length} questões • {s.duracaoMin} min • {s.vagas}</p>
-                <div className="mt-4 flex items-center gap-2 text-xs text-white/70">
-                  <span className="px-2 py-1 rounded-full glass">Crono</span>
-                  <span className="px-2 py-1 rounded-full glass">Ranking</span>
-                  <span className="px-2 py-1 rounded-full glass">IA</span>
-                </div>
-                <span className="mt-5 inline-flex w-full justify-center rounded-full bg-white text-black py-2.5 text-sm font-bold group-hover:bg-zinc-100">Fazer agora — grátis →</span>
-              </div>
-            </Link>
-          ))}
-        </div>
-
-        <div className="mt-8 glass rounded-3xl p-6 flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h3 className="font-display font-semibold">Não achou sua prova?</h3>
-            <p className="text-sm text-white/60">Treine com simulados organizados por concurso e banca.</p>
-          </div>
-          <Link href="/api/collector" className="rounded-full bg-white text-black px-6 py-3 font-semibold">Ver radar ao vivo</Link>
-        </div>
-      </main>
-      <Footer />
-    </div>
-  );
+export default async function SimuladosPage({ searchParams }: { searchParams: Promise<{ concursoId?: string | string[]; disciplina?: string | string[]; origem?: string | string[] }> }) {
+  const params = await searchParams;
+  const requestedContestId = typeof params.concursoId === "string" ? params.concursoId : undefined;
+  const initialDiscipline = typeof params.disciplina === "string" && params.disciplina.length <= 120 ? params.disciplina : undefined;
+  return <div className="mesh min-h-screen"><Header /><main className="mx-auto max-w-6xl px-6 py-8">
+    <h1 className="font-display text-4xl font-bold">Treine com questões publicadas</h1>
+    <p className="mt-3 max-w-3xl text-white/70">Personalize o banco geral ou selecione um concurso com conteúdo disponível. Responda às questões, receba a nota do servidor e consulte os comentários validados.</p>
+    {params.origem === "trilha-anterior" && <p role="status" className="mt-4 rounded-2xl border border-cyan-300/20 bg-cyan-400/10 p-4 text-sm text-cyan-100">Este link agora leva ao treino com o banco publicado. As opções abaixo mostram o conteúdo realmente disponível.</p>}
+    <SimuladoGenerator key={`${requestedContestId || "general"}:${initialDiscipline || "all"}`} requestedContestId={requestedContestId} initialDiscipline={initialDiscipline} />
+    <section className="mt-8 grid gap-4 md:grid-cols-2">
+      <article className="glass rounded-3xl p-6"><h2 className="font-display text-xl font-bold">Seu histórico de estudo</h2><p className="mt-2 text-sm text-white/65">Entre antes de iniciar o treino para vincular a tentativa à sua conta e acompanhar os próximos resultados.</p><Link href="/dashboard" className="mt-4 inline-block text-cyan-200 underline">Acompanhar meu desempenho</Link></article>
+      <article className="glass rounded-3xl p-6"><h2 className="font-display text-xl font-bold">Concursos e fontes oficiais</h2><p className="mt-2 text-sm text-white/65">Consulte os editais e os dados publicados. Questões de fundamentos não representam provas oficiais nem certificam o conteúdo de um edital.</p><Link href="/concursos" className="mt-4 inline-block text-cyan-200 underline">Consultar concursos</Link></article>
+    </section>
+  </main><Footer /></div>;
 }

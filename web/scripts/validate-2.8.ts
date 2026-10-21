@@ -48,7 +48,8 @@ async function main() {
   assert.match(generator, /await import\("@\/lib\/supabase"\)/);
 
   const generateRoute = readFileSync("src/app/api/simulados/generate/route.ts", "utf8");
-  assert.match(generateRoute, /publicContestIds\.has\(question\.concurso_id\)/, "questions from unpublished or merged contests must not be selectable");
+  assert.match(generateRoute, /loadPublishedQuestionPool/, "generation must use the shared public-only pool");
+  assert.match(readFileSync("src/lib/simulados/published-pool.ts", "utf8"), /publicContestIds\.has\(question\.concurso_id\)/, "questions from unpublished or merged contests must not be selectable");
 
   const nextConfig = readFileSync("next.config.ts", "utf8");
   assert.match(nextConfig, /serverExternalPackages:\s*\["pdf-parse", "@napi-rs\/canvas"\]/, "PDF parsing dependencies must retain their Node runtime files in serverless deployments");

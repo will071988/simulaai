@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { authorizeOperations } from "@/lib/admin/authorize";
 import { supabaseService } from "@/lib/supabase-server";
 import { observeApiRoute } from "@/lib/observability/operations";
+import { loadPublishedQuestionPool } from "@/lib/simulados/published-pool";
 
 export const dynamic = "force-dynamic";
 const noStore = { "Cache-Control": "private, no-store" };
@@ -46,6 +47,19 @@ async function handleGET(request: Request) {
   const stripeLive = bool(process.env.STRIPE_LIVEMODE) && paymentLinks.every((value) => Boolean(value) && !String(value).includes("/test_"));
   const supportEmail = process.env.NEXT_PUBLIC_SUPPORT_EMAIL || "";
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "";
+  let publishedQuestions = 0;
+  let trustedExplanationCount = 0;
+  let contestsWithFullExam = 0;
+  try {
+    const pool = await loadPublishedQuestionPool();
+    publishedQuestions = pool.questions.length;
+    contestsWithFullExam = pool.contests.filter((contest) => pool.questions.filter((question) => question.concurso_id === contest.id).length >= 30).length;
+    if (publishedQuestions) {
+      const explanations = await svc.from("question_explanations").select("questao_id,explanation_cache!inner(id)", { count: "exact", head: true }).in("questao_id", pool.questions.map((question) => question.id)).eq("explanation_cache.quality_status", "VALIDATED").gte("explanation_cache.confidence", 0.8).gte("explanation_cache.explanation_quality", 0.8);
+      if (explanations.error) throw new Error("EXPLANATION_COVERAGE_FAILED");
+      trustedExplanationCount = explanations.count || 0;
+    }
+  } catch { return reply({ ok: false, error: "RELEASE_CONTENT_QUERY_FAILED" }, 503); }
 
   const gates = {
     productionRuntime: process.env.VERCEL_ENV === "production",
@@ -57,6 +71,9 @@ async function handleGET(request: Request) {
     supportConfigured: /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(supportEmail),
     siteUrlConfigured: validHttps(siteUrl),
     freeAiGuard: bool(process.env.FREE_AI_ONLY),
+    publishedQuestionBank: publishedQuestions >= 30,
+    trustedExplanations: publishedQuestions > 0 && trustedExplanationCount === publishedQuestions,
+    contestQuestionCoverage: contestsWithFullExam > 0,
   };
 
   return reply({
@@ -71,6 +88,9 @@ async function handleGET(request: Request) {
         stripeLivemode: bool(process.env.STRIPE_LIVEMODE),
         siteUrlHost: validHttps(siteUrl) ? new URL(siteUrl).hostname : null,
         supportConfigured: gates.supportConfigured,
+        publishedQuestions,
+        trustedExplanationCount,
+        contestsWithFullExam,
       },
     },
   });

@@ -22,9 +22,9 @@ async function main() {
     await db.query("update questoes set quality_status='VALIDATED', validated_at=now(), validated_by='fixture', validation_errors='[]' where id=$1", [draft.id]);
     await db.query("update questoes set quality_status='PUBLISHED' where id=$1", [draft.id]);
     await db.exec("set role anon");
-    assert.equal((await db.query<{ n: number }>("select count(*) as n from questoes where id=$1", [draft.id])).rows[0].n, 1);
+    await assert.rejects(db.query("select id,resposta_correta,alternativas from questoes where id=$1", [draft.id]), /permission denied/, "public access must use the API projection, not the answer-bearing table");
     await assert.rejects(db.query("delete from questoes where id=$1", [draft.id]), /permission denied/);
-    console.log("Sprint 1.7 PostgreSQL quality gate and published-only RLS tests passed");
+    console.log("Sprint 1.7 PostgreSQL quality gate and server-only answer access tests passed");
   } finally {
     await db.exec("set role postgres").catch(() => undefined);
     await db.close();

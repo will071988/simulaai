@@ -6,34 +6,12 @@ import { GenerateSimuladoSchema, selectQuestions, simuladoTitle, type QuestionCa
 import { createAttemptToken, hashAttemptToken } from "@/lib/simulados/security";
 import { authenticatedUser, bearerToken } from "@/lib/auth/server";
 import { observeApiRoute } from "@/lib/observability/operations";
-
-type QuestionRow = {
-  id: string; concurso_id: string | null; cargo: string | null; disciplina: string; assunto: string;
-  banca: string | null; nivel: string | null; dificuldade: "FACIL" | "MEDIO" | "DIFICIL";
-  enunciado: string; alternativas: unknown; subassunto: string | null; origem: string; ano: number | null;
-};
-type ContestRow = { id: string; titulo: string; orgao: string; banca: string | null; escolaridade: string[] | null };
-
-const questionFields = "id,concurso_id,cargo,disciplina,assunto,subassunto,banca,nivel,dificuldade,enunciado,alternativas,origem,ano";
-
-async function loadPublishedQuestions() {
-  const svc = supabaseService();
-  const { data, error } = await svc.from("questoes").select(questionFields).eq("quality_status", "PUBLISHED").limit(1000);
-  if (error) throw new Error("QUESTIONS_QUERY_FAILED");
-  const questions = (data || []) as QuestionRow[];
-  const contestIds = [...new Set(questions.flatMap((row) => row.concurso_id ? [row.concurso_id] : []))];
-  if (!contestIds.length) return { questions, contests: [] as ContestRow[] };
-  const result = await svc.from("concursos").select("id,titulo,orgao,banca,escolaridade").in("id", contestIds).eq("is_publishable", true).is("merged_into_id", null);
-  if (result.error) throw new Error("CONTESTS_QUERY_FAILED");
-  const contests = (result.data || []) as ContestRow[];
-  const publicContestIds = new Set(contests.map((contest) => contest.id));
-  return { questions: questions.filter((question) => !question.concurso_id || publicContestIds.has(question.concurso_id)), contests };
-}
+import { loadPublishedQuestionPool, publishedQuestionOptions } from "@/lib/simulados/published-pool";
 
 async function handleGET(_request: Request) {
   void _request;
   try {
-    const { questions, contests } = await loadPublishedQuestions();
+    const { questions, contests } = await loadPublishedQuestionPool();
     const contestMap = new Map(contests.map((contest) => [contest.id, contest]));
     const values = (key: "cargo" | "disciplina" | "assunto" | "dificuldade") =>
       [...new Set(questions.flatMap((question) => question[key] ? [String(question[key])] : []))].sort((a, b) => a.localeCompare(b, "pt-BR"));
@@ -42,7 +20,7 @@ async function handleGET(_request: Request) {
       return banca ? [banca] : [];
     }))].sort((a, b) => a.localeCompare(b, "pt-BR"));
     const niveis = [...new Set(questions.flatMap((question) => question.nivel ? [question.nivel] : []))].sort((a, b) => a.localeCompare(b, "pt-BR"));
-    return NextResponse.json({ data: { concursos: contests.map((contest) => ({ ...contest, questionCount: questions.filter((q) => q.concurso_id === contest.id).length })), cargos: values("cargo"), disciplinas: values("disciplina"), assuntos: values("assunto"), bancas, niveis, dificuldades: values("dificuldade") } });
+    return NextResponse.json({ data: { concursos: contests.map((contest) => ({ ...contest, questionCount: questions.filter((q) => q.concurso_id === contest.id).length })), cargos: values("cargo"), disciplinas: values("disciplina"), assuntos: values("assunto"), bancas, niveis, dificuldades: values("dificuldade"), questions: publishedQuestionOptions({ questions, contests }), totalQuestions: questions.length } }, { headers: { "Cache-Control": "no-store" } });
   } catch {
     return NextResponse.json({ error: "SIMULADO_OPTIONS_FAILED" }, { status: 500 });
   }
@@ -56,7 +34,7 @@ async function handlePOST(request: Request) {
     const parsed = GenerateSimuladoSchema.safeParse(await request.json());
     if (!parsed.success) return NextResponse.json({ error: "INVALID_SIMULADO_REQUEST", details: parsed.error.flatten().fieldErrors }, { status: 400 });
     const input = { ...parsed.data, seed: parsed.data.seed || randomBytes(16).toString("hex") };
-    const { questions, contests } = await loadPublishedQuestions();
+    const { questions, contests } = await loadPublishedQuestionPool();
     const contestMap = new Map(contests.map((contest) => [contest.id, contest]));
     const candidates: QuestionCandidate[] = questions.map((question) => {
       const contest = question.concurso_id ? contestMap.get(question.concurso_id) : undefined;
