@@ -7,6 +7,7 @@ export type AIRequest = {
   schema?: unknown;
   promptVersion: string;
   maxTokens?: number;
+  reasoningPolicy?: "provider-default" | "disabled";
 };
 
 export type AIResult<T> = {
@@ -28,6 +29,7 @@ export type AIResult<T> = {
   upstreamError?: { code?: string; message?: string };
   success?: boolean;
   requestedModel?: string;
+  generationDiagnostics?: { finishReason: string | null; completionTokens: number | null; reasoningTokens: number | null; visibleTokens: number | null; reasoningPresent: boolean; reasoningBudgetExhausted: boolean };
   attempts?: Array<{ provider: string; requestedModel: string; effectiveModel: string; errorCode?: string; latencyMs: number }>;
 };
 

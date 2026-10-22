@@ -5,6 +5,7 @@ import { generateWithFallback, type RouterDependencies } from "../src/lib/ai/rou
 import { GenerationBudget } from "../src/lib/ai/generationBudget";
 import { extractionSemanticIssues } from "../src/lib/collector/extractionSemantics";
 import { ExtractConcursoSchema } from "../src/lib/collector/schemas";
+import { EXTRACTION_DIAGNOSTIC_TEXT } from "../src/lib/ai/extractionDiagnostic";
 
 async function main() {
   const models = OPENROUTER_FREE_CANDIDATES.slice(0, 3);
@@ -70,6 +71,23 @@ async function main() {
     globalThis.fetch = async () => new Response(null, { status: 503 });
     assert.equal((await new OpenRouterProvider(models[0]).generate({ taskType: "EXTRACT_CONCURSO", prompt: "fixture", input: {}, promptVersion: "fixture" }, async () => { paidReservations++; return true; })).errorCode, "MODEL_UNAVAILABLE");
     assert.equal(paidReservations, 0);
+    const reasoningCatalog = { data: [{ ...catalog.data[0], supported_parameters: ["response_format", "reasoning"], reasoning: { mandatory: false, default_enabled: true, supported_efforts: ["low", "none"] } }] };
+    let diagnosticCalls = 0;
+    globalThis.fetch = async (input, init) => {
+      if (String(input).endsWith("/models")) return Response.json(reasoningCatalog);
+      diagnosticCalls++;
+      const body = JSON.parse(String(init?.body)); assert.equal(body.max_tokens, 1200);
+      if (body.reasoning?.effort === "none") return Response.json({ model: models[0], choices: [{ finish_reason: "stop", message: { content: '{"ok":true}' } }], usage: { completion_tokens: 20, completion_tokens_details: { reasoning_tokens: 0 } } });
+      return Response.json({ model: models[0], choices: [{ finish_reason: "length", message: { content: "", reasoning: "private reasoning must never appear in diagnostics" } }], usage: { completion_tokens: 1200, completion_tokens_details: { reasoning_tokens: 1200 } } });
+    };
+    const baseline = await new OpenRouterProvider(models[0]).generate({ taskType: "EXTRACT_CONCURSO", prompt: "fixture", input: {}, promptVersion: "fixture", reasoningPolicy: "provider-default" }, async () => true);
+    assert.equal(baseline.errorCode, "EMPTY_BODY"); assert.equal(baseline.generationDiagnostics?.reasoningBudgetExhausted, true);
+    assert.doesNotMatch(JSON.stringify(baseline), /private reasoning must never/);
+    const disabled = await new OpenRouterProvider(models[0]).generate({ taskType: "EXTRACT_CONCURSO", prompt: "fixture", input: {}, promptVersion: "fixture", reasoningPolicy: "disabled" }, async () => true);
+    assert.equal(disabled.ok, true); assert.equal(disabled.generationDiagnostics?.visibleTokens, 20); assert.equal(diagnosticCalls, 2);
+    globalThis.fetch = async () => Response.json({ data: [{ ...reasoningCatalog.data[0], reasoning: { mandatory: true } }] });
+    const mandatory = await new OpenRouterProvider(models[0]).generate({ taskType: "EXTRACT_CONCURSO", prompt: "fixture", input: {}, promptVersion: "fixture", reasoningPolicy: "disabled" }, async () => { throw new Error("must not reserve"); });
+    assert.equal(mandatory.errorCode, "MODEL_UNAVAILABLE");
   } finally { globalThis.fetch = originalFetch; if (oldKey === undefined) delete process.env.OPENROUTER_API_KEY; else process.env.OPENROUTER_API_KEY = oldKey; if (oldOrder === undefined) delete process.env.AI_OPENROUTER_MODEL_ORDER; else process.env.AI_OPENROUTER_MODEL_ORDER = oldOrder; }
   const raw = "Instituto Exemplo. Cargo: Analista Administrativo. Escolaridade: nível superior. São 10 vagas. Inscrições de 01/10/2026 até 20/10/2026.";
   const valid = ExtractConcursoSchema.parse({ orgao: "Instituto Exemplo", banca: "Cebraspe", vagas: 10, status: null, cargos: ["Analista Administrativo"], escolaridade: ["SUPERIOR"], evidence: { vagas: "São 10 vagas", cargos: "Cargo: Analista Administrativo" } });
@@ -78,6 +96,8 @@ async function main() {
   assert.ok(extractionSemanticIssues({ ...valid, orgao: "Instituição inventada" }, "Instituto Exemplo", raw, "Cebraspe").includes("orgao:UNSUPPORTED_IDENTITY"));
   assert.ok(extractionSemanticIssues({ ...valid, prova_data: "2026-02-30" }, "Instituto Exemplo", raw, "Cebraspe").includes("prova_data:UNSUPPORTED_DATE"));
   assert.ok(extractionSemanticIssues({ ...valid, evidence: { vagas: "quote inventada" } }, "Instituto Exemplo", raw, "Cebraspe").includes("vagas:NON_LITERAL_EVIDENCE"));
+  const diagnosticExpected = ExtractConcursoSchema.parse({ orgao: "INSTITUTO MUNICIPAL DE ESTUDOS APLICADOS", banca: "Cebraspe", vagas: 12, salario: 4200, status: null, cargos: ["Analista Administrativo"], escolaridade: ["SUPERIOR"], inscricao_inicio: "2026-11-02", inscricao_fim: "2026-11-20", prova_data: "2026-12-15", scope: "NACIONAL", evidence: { cargos: "Cargo: Analista Administrativo." } });
+  assert.deepEqual(extractionSemanticIssues(diagnosticExpected, diagnosticExpected.orgao!, EXTRACTION_DIAGNOSTIC_TEXT, "Cebraspe"), []);
   console.log("live-pricing fail-closed, model order/fallback/budget/circuit and grounded extraction validation passed");
 }
 main().catch((error) => { console.error(error instanceof Error ? error.message : "model validation failed"); process.exitCode = 1; });

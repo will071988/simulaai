@@ -47,6 +47,10 @@ async function main() {
     for (let count = 0; count < 120; count++) { try { const response = await fetch(`${base}/api/simulados/generate`); if (response.ok) { ready = true; break; } } catch {} await new Promise((resolve) => setTimeout(resolve, 500)); }
     assert.ok(ready, `local fixture server unavailable: ${output.slice(-3000)}`);
     assert.equal((await fetch(`${base}/api/admin/content/starter`, { method: "POST" })).status, 401);
+    assert.equal((await fetch(`${base}/api/collector/provider-smoke`, { method: "POST" })).status, 401);
+    assert.equal((await fetch(`${base}/api/collector/provider-smoke`, { method: "POST", headers: { authorization: `Bearer ${token(learner)}` } })).status, 403);
+    assert.equal((await fetch(`${base}/api/collector/provider-smoke`, { method: "POST", headers: { authorization: `Bearer ${token(admin)}` } })).status, 409, "disabled AI must block even an administrator");
+    assert.equal((await fetch(`${base}/api/collector/pending?limit=6`, { method: "POST", headers: { authorization: `Bearer ${token(admin)}` } })).status, 400);
     assert.equal((await fetch(`${base}/api/admin/content/starter`, { method: "POST", headers: { authorization: `Bearer ${token(learner)}` } })).status, 403);
     assert.equal((await fetch(`${base}/api/admin/content/starter`, { method: "POST", headers: { authorization: `Bearer ${token(admin)}`, "content-type": "application/json" }, body: "{}" })).status, 400);
     const published = await fetch(`${base}/api/admin/content/starter`, { method: "POST", headers: { authorization: `Bearer ${token(admin)}`, "content-type": "application/json" }, body: JSON.stringify({ action: "PUBLISH_STARTER_BANK", revision: "fundamentos-v1" }) });

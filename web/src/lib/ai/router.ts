@@ -117,7 +117,7 @@ export async function generateWithFallback<T>(req: AIRequest, opts?: { validate?
     if (budget.calls > beforeCalls) {
       attempts.push({ provider: name, requestedModel: p.model, effectiveModel: last.effectiveModel!, latencyMs: last.latencyMs, errorCode: last.errorCode });
       await deps.logUsage(p.name, p.model, req.taskType, last.ok, last.latencyMs, last.errorCode, JSON.stringify(req.input).length, result.raw?.length, last.effectiveModel);
-      if (deps === dependencies) console.info(JSON.stringify({ event: "ai_provider_diagnostics", provider: p.name, requestedModel: p.model, effectiveModel: last.effectiveModel, httpStatus: result.httpStatus ?? null, latencyMs: last.latencyMs, timeoutSource: result.timeoutSource ?? null, jsonClassification: invalidSchema ? "SCHEMA_INVALID" : result.jsonClassification ?? null, errorCode: last.errorCode ?? null }));
+      if (deps === dependencies) console.info(JSON.stringify({ event: "ai_provider_diagnostics", provider: p.name, requestedModel: p.model, effectiveModel: last.effectiveModel, httpStatus: result.httpStatus ?? null, latencyMs: last.latencyMs, timeoutSource: result.timeoutSource ?? null, jsonClassification: invalidSchema ? "SCHEMA_INVALID" : result.jsonClassification ?? null, generationDiagnostics: result.generationDiagnostics ?? null, errorCode: last.errorCode ?? null }));
     }
     if (last.ok) {
       execution.failures.set(key, 0); execution.health.set(key, "healthy");

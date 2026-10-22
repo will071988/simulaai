@@ -14,6 +14,7 @@ export async function extractConcursoWithAI(title: string, rawText: string, budg
     input: { title, sourceName, snippet: rawText.slice(0, 4000) },
     promptVersion: "extract_concurso_v4_grounded",
     schema: closeSchemaObjects(z.toJSONSchema(ExtractConcursoSchema, { io: "input" })),
+    reasoningPolicy: process.env.AI_EXTRACT_REASONING_POLICY === "disabled" ? "disabled" : "provider-default",
   }, { validate: (data) => ExtractConcursoSchema.safeParse(data).success, semanticValidate: (data) => {
     const parsed = ExtractConcursoSchema.safeParse(data);
     if (!parsed.success) return false;

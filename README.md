@@ -33,6 +33,12 @@ O script cria uma tentativa real de verificação na conta do administrador. Se 
 
 O histórico remoto contém versões antigas registradas com timestamps diferentes dos arquivos locais. Não usar `migration repair` ou reaplicar migrations antigas para publicar esta entrega. O rollout da restrição de gabaritos deve usar uma área isolada com `migration fetch --linked` e dry-run comprovando que somente a nova migration será aplicada. Não ampliar novamente os privilégios para reverter: corrigir o endpoint afetado mantendo gabaritos server-only.
 
+### Diagnóstico de extração e reasoning
+
+O POST manual de `/api/collector/pending?limit=1|5` e o diagnóstico `/api/collector/provider-smoke` aceitam CRON_SECRET ou sessão de administrador confirmada pelo RBAC. O GET do worker continua reservado ao cron. As respostas protegidas não devem ser cacheadas.
+
+`scripts/diagnose-extraction-reasoning.ts` compara exatamente duas chamadas sintéticas pelo client real: comportamento padrão do provider e reasoning desativado quando o catálogo informa suporte. O script não processa AI_PENDING nem persiste a extração; registra reservas/logs normais e retorna somente status, flags e contadores de tokens. Nenhum raciocínio textual é registrado. `AI_EXTRACT_REASONING_POLICY` permanece `provider-default` até validação live; `disabled` não aumenta max_tokens/timeout e pula modelos de reasoning obrigatório ou sem suporte declarado à desativação.
+
 ## Planejamento original de trilhas (referência histórica, não catálogo publicado)
 1. Polícia Federal (1.000 vagas previstas)
 2. PRF (533 vagas — Cebraspe)

@@ -8,8 +8,8 @@ export const OPENROUTER_FREE_CANDIDATES = [
   "openrouter/free",
 ] as const;
 
-type CatalogModel = { id: string; pricing?: Record<string, unknown>; context_length?: number; architecture?: { input_modalities?: string[]; output_modalities?: string[] }; supported_parameters?: string[] };
-export type ModelApproval = { ok: boolean; errorCode?: string; contextLength?: number; promptPrice?: unknown; completionPrice?: unknown };
+type CatalogModel = { id: string; pricing?: Record<string, unknown>; context_length?: number; architecture?: { input_modalities?: string[]; output_modalities?: string[] }; supported_parameters?: string[]; reasoning?: { mandatory?: boolean; default_enabled?: boolean; supported_efforts?: string[] | null } };
+export type ModelApproval = { ok: boolean; errorCode?: string; contextLength?: number; promptPrice?: unknown; completionPrice?: unknown; reasoningMandatory?: boolean; reasoningDisableSupported?: boolean; reasoningNoneSupported?: boolean };
 function zeroPrice(price: unknown): boolean {
   if (typeof price === "number") return Number.isFinite(price) && price === 0;
   return typeof price === "string" && /^\d+(?:\.\d+)?(?:e[+-]?\d+)?$/i.test(price) && Number(price) === 0;
@@ -22,7 +22,7 @@ export function approveFreeModel(model: string, catalog: unknown): ModelApproval
   if (!record) return { ok: false, errorCode: "MODEL_UNAVAILABLE" };
   if (!zeroPrice(record.pricing?.prompt) || !zeroPrice(record.pricing?.completion) || (record.pricing?.request !== undefined && !zeroPrice(record.pricing.request))) return { ok: false, errorCode: "MODEL_NOT_FREE" };
   if (!record.architecture?.input_modalities?.includes("text") || !record.architecture.output_modalities?.includes("text") || !record.supported_parameters?.includes("response_format")) return { ok: false, errorCode: "MODEL_UNAVAILABLE" };
-  return { ok: true, contextLength: record.context_length, promptPrice: record.pricing?.prompt, completionPrice: record.pricing?.completion };
+  return { ok: true, contextLength: record.context_length, promptPrice: record.pricing?.prompt, completionPrice: record.pricing?.completion, reasoningMandatory: record.reasoning?.mandatory, reasoningDisableSupported: record.reasoning?.mandatory === false && record.supported_parameters.includes("reasoning"), reasoningNoneSupported: record.reasoning?.mandatory === false && (record.reasoning.supported_efforts === null || Boolean(record.reasoning.supported_efforts?.includes("none"))) };
 }
 export async function fetchOpenRouterCatalog(): Promise<unknown> {
   const response = await fetch("https://openrouter.ai/api/v1/models", { cache: "no-store", signal: AbortSignal.timeout(10000), redirect: "error" });

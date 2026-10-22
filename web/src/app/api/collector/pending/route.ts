@@ -11,6 +11,7 @@ import { refreshOperationalAlerts } from "@/lib/observability/alerts";
 import { finishOperationalJob, observeApiRoute, startOperationalJob } from "@/lib/observability/operations";
 import { pendingLimit, pendingClaimArguments, pendingProviderOrder } from "@/lib/collector/pendingLimit";
 import { extractionSemanticIssues } from "@/lib/collector/extractionSemantics";
+import { authorizeCollectorControl } from "@/lib/collector/controlAuth";
 
 async function handleGET(req: Request) {
   if (!isCronAuthorized(req)) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
@@ -18,15 +19,21 @@ async function handleGET(req: Request) {
   if (limit === null) return NextResponse.json({ ok: false, error: "INVALID_LIMIT" }, { status: 400 });
   const order = pendingProviderOrder(req);
   if (order === null) return NextResponse.json({ ok: false, error: "INVALID_PROVIDER_SELECTION" }, { status: 400 });
-  return handlePending("CRON", limit, order);
+  const response = await handlePending("CRON", limit, order);
+  response.headers.set("Cache-Control", "private, no-store");
+  return response;
 }
 async function handlePOST(req: Request) {
-  if (!isCronAuthorized(req)) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  const access = await authorizeCollectorControl(req);
+  if (access.status !== 200) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: access.status, headers: { "Cache-Control": "private, no-store" } });
   const limit = pendingLimit(req);
   if (limit === null) return NextResponse.json({ ok: false, error: "INVALID_LIMIT" }, { status: 400 });
   const order = pendingProviderOrder(req);
   if (order === null) return NextResponse.json({ ok: false, error: "INVALID_PROVIDER_SELECTION" }, { status: 400 });
-  return handlePending("MANUAL", limit, order);
+  if (access.actorId) console.info(JSON.stringify({ event: "collector_manual_request", actorId: access.actorId, limit }));
+  const response = await handlePending("MANUAL", limit, order);
+  response.headers.set("Cache-Control", "private, no-store");
+  return response;
 }
 
 async function handlePending(triggerType: "CRON" | "MANUAL", limit: 1 | 5, providerOrder?: string[]) {

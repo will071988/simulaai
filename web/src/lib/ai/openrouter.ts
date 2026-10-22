@@ -74,6 +74,7 @@ export class OpenRouterProvider implements AIProvider {
     if (this.cb.isOpen()) return { ok: false, provider: this.name, model: this.model, latencyMs: Date.now() - start, errorCode: "CIRCUIT_OPEN" };
     const approval = await validateLiveFreeModel(this.model);
     if (!approval.ok) return { ok: false, provider: this.name, model: this.model, effectiveModel: "MODEL_EFFECTIVE_UNKNOWN", latencyMs: Date.now() - start, errorCode: approval.errorCode };
+    if (req.reasoningPolicy === "disabled" && !approval.reasoningDisableSupported) return { ok: false, provider: this.name, model: this.model, latencyMs: Date.now() - start, errorCode: "MODEL_UNAVAILABLE" };
     start = Date.now();
     let httpStatus: number | undefined;
     let effectiveModel = "MODEL_EFFECTIVE_UNKNOWN";
@@ -91,6 +92,7 @@ export class OpenRouterProvider implements AIProvider {
           provider: { max_price: { prompt: 0, completion: 0 }, require_parameters: true, allow_fallbacks: false },
           max_tokens: req.maxTokens || 1200,
           temperature: 0.2,
+          ...(req.reasoningPolicy === "disabled" && approval.reasoningDisableSupported ? { reasoning: approval.reasoningNoneSupported ? { effort: "none", exclude: true } : { enabled: false, exclude: true } } : {}),
         }),
       }, permit);
       httpStatus = res.status;
@@ -100,14 +102,23 @@ export class OpenRouterProvider implements AIProvider {
         this.cb.recordFailure();
         return { ok: false, provider: this.name, model: this.model, effectiveModel, httpStatus, latencyMs: Date.now() - start, errorCode: res.status === 404 ? "MODEL_UNAVAILABLE" : httpError(res.status), ...(res.status === 408 || res.status === 504 ? { timeoutSource: "OPENROUTER_OR_UPSTREAM" as const } : {}) };
       }
-      const json = await res.json() as { model?: string; error?: unknown; choices?: { finish_reason?: string; message?: { content?: string } }[] };
+      const json = await res.json() as { model?: string; error?: unknown; usage?: { completion_tokens?: unknown; completion_tokens_details?: { reasoning_tokens?: unknown } }; choices?: { finish_reason?: string; message?: { content?: string; reasoning?: unknown; reasoning_details?: unknown } }[] };
       effectiveModel = typeof json.model === "string" ? json.model : "MODEL_EFFECTIVE_UNKNOWN";
       if (json.error) return { ok: false, provider: this.name, model: this.model, effectiveModel, httpStatus, latencyMs: Date.now() - start, errorCode: "PROVIDER_UNAVAILABLE", jsonClassification: "UPSTREAM_ERROR_WITH_200", parseSuccess: false };
-      const raw = json.choices?.[0]?.message?.content || "";
+      const content = json.choices?.[0]?.message?.content;
+      if (content != null && typeof content !== "string") return { ok: false, provider: this.name, model: this.model, effectiveModel, httpStatus, latencyMs: Date.now() - start, errorCode: "INVALID_JSON", bodyPresent: true, parseSuccess: false };
+      const raw = content || "";
+      const count = (value: unknown) => typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
+      const completionTokens = count(json.usage?.completion_tokens);
+      const reasoningTokens = count(json.usage?.completion_tokens_details?.reasoning_tokens);
+      const finish = json.choices?.[0]?.finish_reason;
+      const finishReason = typeof finish === "string" && ["stop", "length", "content_filter", "tool_calls", "error"].includes(finish) ? finish : null;
+      const message = json.choices?.[0]?.message;
+      const generationDiagnostics = { finishReason, completionTokens, reasoningTokens, visibleTokens: completionTokens !== null && reasoningTokens !== null ? Math.max(0, completionTokens - reasoningTokens) : null, reasoningPresent: typeof message?.reasoning === "string" && message.reasoning.length > 0 || Array.isArray(message?.reasoning_details) && message.reasoning_details.length > 0, reasoningBudgetExhausted: !raw.trim() && finishReason === "length" && completionTokens !== null && completionTokens > 0 && reasoningTokens !== null && reasoningTokens > 0 && reasoningTokens >= completionTokens - 1 };
       let data: T | undefined;
-      try { data = parseOpenRouterJson<T>(raw); } catch (error) { const invalidObject = error instanceof Error && error.message === "INVALID_JSON_OBJECT"; return { ok: false, provider: this.name, model: this.model, effectiveModel, httpStatus, latencyMs: Date.now() - start, bodyPresent: Boolean(raw.trim()), errorCode: invalidObject ? "INVALID_SCHEMA" : !raw.trim() ? "EMPTY_BODY" : "INVALID_JSON", jsonClassification: invalidObject ? "SCHEMA_INVALID" : classifyInvalidJson(raw, json.choices?.[0]?.finish_reason), parseSuccess: invalidObject }; }
+      try { data = parseOpenRouterJson<T>(raw); } catch (error) { const invalidObject = error instanceof Error && error.message === "INVALID_JSON_OBJECT"; return { ok: false, provider: this.name, model: this.model, effectiveModel, httpStatus, generationDiagnostics, latencyMs: Date.now() - start, bodyPresent: Boolean(raw.trim()), errorCode: invalidObject ? "INVALID_SCHEMA" : !raw.trim() ? "EMPTY_BODY" : "INVALID_JSON", jsonClassification: invalidObject ? "SCHEMA_INVALID" : classifyInvalidJson(raw, json.choices?.[0]?.finish_reason), parseSuccess: invalidObject }; }
       this.cb.recordSuccess();
-      return { ok: true, provider: this.name, model: this.model, effectiveModel, httpStatus, data, raw, bodyPresent: true, parseSuccess: true, latencyMs: Date.now() - start };
+      return { ok: true, provider: this.name, model: this.model, effectiveModel, httpStatus, generationDiagnostics, data, raw, bodyPresent: true, parseSuccess: true, latencyMs: Date.now() - start };
     } catch (e) {
       this.cb.recordFailure();
       return { ok: false, provider: this.name, model: this.model, effectiveModel, httpStatus, latencyMs: Date.now() - start, ...providerError(e), ...(e instanceof SyntaxError ? { jsonClassification: "OTHER", parseSuccess: false } : {}) };
