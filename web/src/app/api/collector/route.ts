@@ -28,9 +28,11 @@ async function handleGET(req: Request) {
 
   // public minimal status (no secrets)
   if (!wantRun) {
-    const { data: lastRun, error: runError } = await svc.from("collector_runs").select("started_at,finished_at,status,sources_checked,sources_success,sources_failed,documents_new,documents_unchanged,ai_pending,errors_count,parsed_success,parse_failed").order("started_at", { ascending: false }).limit(1).maybeSingle();
-    const { count: pendingAI, error: pendingError } = await svc.from("collector_documents").select("id", { count: "exact", head: true }).eq("status", "AI_PENDING");
-    const { data: sources, error: sourcesError } = await svc.from("collector_sources").select("health_status,failure_count").eq("enabled", true);
+    const [{ data: lastRun, error: runError }, { count: pendingAI, error: pendingError }, { data: sources, error: sourcesError }] = await Promise.all([
+      svc.from("collector_runs").select("started_at,finished_at,status,sources_checked,sources_success,sources_failed,documents_new,documents_unchanged,ai_pending,errors_count,parsed_success,parse_failed").order("started_at", { ascending: false }).limit(1).maybeSingle(),
+      svc.from("collector_documents").select("id", { count: "exact", head: true }).eq("status", "AI_PENDING"),
+      svc.from("collector_sources").select("health_status,failure_count").eq("enabled", true),
+    ]);
     if (runError || pendingError || sourcesError) return NextResponse.json({ ok: false, error: "COLLECTOR_HEALTH_QUERY_FAILED" }, { status: 503 });
     const healthy = sources?.filter((s) => s.health_status === "HEALTHY").length ?? 0;
     const degraded = sources?.filter((s) => s.health_status === "DEGRADED").length ?? 0;
