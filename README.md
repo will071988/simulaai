@@ -13,6 +13,7 @@ Foco atual: treino com questões publicadas, nota calculada no servidor, coment�
 - O banco geral não representa prova oficial nem comprova cobertura de uma trilha de concurso.
 - Stripe permanece em homologação. O painel `/admin/release` também exige conteúdo elegível, cobertura de comentários e um concurso com prova de 30 questões antes de indicar prontidão comercial.
 - A migration `20261020190000_restrict_question_answer_reads.sql` remove SELECT direto em `questoes` de anon/authenticated/PUBLIC, mantendo as APIs com service_role. Isso impede leitura antecipada de gabaritos e flags `isCorrect` fora da projeção pública.
+- A migration `20261022190000_protect_shared_billing_webhook_events.sql` protege, com autorização específica do responsável, o ledger compartilhado `billing_webhook_events`: RLS ativo, sem acesso de anon/authenticated/PUBLIC e com CRUD/sequence de servidor preservados. Nenhum registro de pagamento é reescrito. Integrações de webhook devem usar service_role no backend, nunca a chave pública.
 - Backlog de IA, backup/restore comprovado e homologação comercial continuam sendo verificações operacionais obrigatórias. Este README não declara o lançamento aprovado.
 
 ### Verificações locais
