@@ -37,7 +37,9 @@ O histórico remoto contém versões antigas registradas com timestamps diferent
 
 O POST manual de `/api/collector/pending?limit=1|5` e o diagnóstico `/api/collector/provider-smoke` aceitam CRON_SECRET ou sessão de administrador confirmada pelo RBAC. O GET do worker continua reservado ao cron. As respostas protegidas não devem ser cacheadas.
 
-`scripts/diagnose-extraction-reasoning.ts` compara exatamente duas chamadas sintéticas pelo client real: comportamento padrão do provider e reasoning desativado quando o catálogo informa suporte. O script não processa AI_PENDING nem persiste a extração; registra reservas/logs normais e retorna somente status, flags e contadores de tokens. Nenhum raciocínio textual é registrado. `AI_EXTRACT_REASONING_POLICY` permanece `provider-default` até validação live; `disabled` não aumenta max_tokens/timeout e pula modelos de reasoning obrigatório ou sem suporte declarado à desativação.
+`scripts/diagnose-extraction-reasoning.ts` planeja até duas chamadas sintéticas pelo client real: comportamento padrão do provider e reasoning desativado quando o catálogo informa suporte. Ele aborta antes da segunda condição se houver erro de configuração/input/budget. O script não processa AI_PENDING nem persiste a extração; registra reservas/logs normais e retorna somente status, flags e contadores de tokens. Nenhum raciocínio textual é registrado. `AI_EXTRACT_REASONING_POLICY` permanece `provider-default` até validação live; `disabled` não aumenta max_tokens/timeout e pula modelos de reasoning obrigatório ou sem suporte declarado à desativação.
+
+O client valida a credencial uma vez por instância da execução antes de admitir geração. HTTP 401/403 interrompe sem reserva e sem retry/fallback. O readiness comercial também verifica autenticação e pricing live: presença de variável não é prova de chave válida. O diagnóstico pareado aborta no primeiro erro de configuração, input ou budget.
 
 ## Planejamento original de trilhas (referência histórica, não catálogo publicado)
 1. Polícia Federal (1.000 vagas previstas)

@@ -33,4 +33,4 @@ export type AIResult<T> = {
   attempts?: Array<{ provider: string; requestedModel: string; effectiveModel: string; errorCode?: string; latencyMs: number }>;
 };
 
-export type AIProviderHealth = { healthy: boolean; latencyMs?: number };
+export type AIProviderHealth = { healthy: boolean; latencyMs?: number; errorCode?: string; credentialHttpStatus?: number };

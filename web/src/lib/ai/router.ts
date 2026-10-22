@@ -107,7 +107,13 @@ export async function generateWithFallback<T>(req: AIRequest, opts?: { validate?
     if (!p || (deps.configured && !deps.configured(name))) { execution.health.set(name, "unavailable"); continue; }
     if ((execution.failures.get(key) || 0) >= 2) { last = { ok: false, provider: name, model: p.model, latencyMs: 0, errorCode: "MODEL_UNAVAILABLE" }; continue; }
     if (!deps.modelAllowed(p.model, name)) return { ok: false, provider: name, model: p.model, latencyMs: 0, errorCode: "AUTH_CONFIGURATION_ERROR", attempts, degraded: true };
-    if (!(await p.healthCheck()).healthy) { last = { ok: false, provider: name, model: p.model, latencyMs: 0, errorCode: "PROVIDER_UNAVAILABLE" }; execution.health.set(name, "unavailable"); continue; }
+    const health = await p.healthCheck();
+    if (!health.healthy) {
+      last = { ok: false, provider: name, model: p.model, latencyMs: 0, httpStatus: health.credentialHttpStatus, errorCode: health.errorCode || "PROVIDER_UNAVAILABLE" };
+      execution.health.set(key, "unavailable");
+      if (health.errorCode === "AUTH_CONFIGURATION_ERROR") return { ...last, attempts, degraded: true };
+      continue;
+    }
     if (budget.calls >= budget.limit) return { ...last, errorCode: "BUDGET_EXHAUSTED", attempts, degraded: true };
     const beforeCalls = budget.calls;
     const result = p.generateStructured ? await p.generateStructured<T>(req, () => budget.reserve(deps.reserveBudget)) : await p.generate<T>(req, () => budget.reserve(deps.reserveBudget));

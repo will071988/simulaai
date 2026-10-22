@@ -3,6 +3,8 @@ import { authorizeOperations } from "@/lib/admin/authorize";
 import { supabaseService } from "@/lib/supabase-server";
 import { observeApiRoute } from "@/lib/observability/operations";
 import { loadPublishedQuestionPool } from "@/lib/simulados/published-pool";
+import { OpenRouterProvider } from "@/lib/ai/openrouter";
+import { configuredOpenRouterModels, fetchOpenRouterCatalog, approveFreeModel } from "@/lib/ai/openrouterModels";
 
 export const dynamic = "force-dynamic";
 const noStore = { "Cache-Control": "private, no-store" };
@@ -60,6 +62,13 @@ async function handleGET(request: Request) {
       trustedExplanationCount = explanations.count || 0;
     }
   } catch { return reply({ ok: false, error: "RELEASE_CONTENT_QUERY_FAILED" }, 503); }
+  const credential = await new OpenRouterProvider().healthCheck();
+  const extractionModels = configuredOpenRouterModels();
+  let freeModelsAvailable = false;
+  if (credential.healthy && extractionModels.length) {
+    try { const catalog = await fetchOpenRouterCatalog(); const approvals = extractionModels.map((model) => approveFreeModel(model, catalog)); freeModelsAvailable = approvals.every((approval) => approval.ok) && (process.env.AI_EXTRACT_REASONING_POLICY !== "disabled" || approvals.some((approval) => approval.reasoningDisableSupported)); }
+    catch { freeModelsAvailable = false; }
+  }
 
   const gates = {
     productionRuntime: process.env.VERCEL_ENV === "production",
@@ -74,6 +83,8 @@ async function handleGET(request: Request) {
     publishedQuestionBank: publishedQuestions >= 30,
     trustedExplanations: publishedQuestions > 0 && trustedExplanationCount === publishedQuestions,
     contestQuestionCoverage: contestsWithFullExam > 0,
+    aiCredentialValid: credential.healthy,
+    freeExtractionModelsAvailable: freeModelsAvailable,
   };
 
   return reply({
@@ -91,6 +102,8 @@ async function handleGET(request: Request) {
         publishedQuestions,
         trustedExplanationCount,
         contestsWithFullExam,
+        aiCredentialHttpStatus: credential.credentialHttpStatus || null,
+        extractionModels,
       },
     },
   });

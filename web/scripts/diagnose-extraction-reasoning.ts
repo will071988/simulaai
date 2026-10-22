@@ -37,12 +37,14 @@ async function main() {
         return response.json();
       }, { model, policy, token: session.data.session.access_token });
       assert.ok(result.physicalCalls <= 1); results.push(result);
+      if (["AUTH_CONFIGURATION_ERROR", "BUDGET_EXHAUSTED", "MODEL_NOT_FREE", "INVALID_INPUT"].includes(result.errorCode)) break;
     }
     const after = await snapshot();
     const physicalCalls = results.reduce((sum, result) => sum + result.physicalCalls, 0);
     assert.equal(after.reserved - before.reserved, physicalCalls); assert.equal(after.calls - before.calls, physicalCalls); assert.equal(after.pending, before.pending); assert.equal(after.claims, 0);
-    console.log(JSON.stringify({ results, before, after, physicalCalls, reservationsDelta: after.reserved - before.reserved, usageDelta: after.calls - before.calls, disabledPassed: results[1]?.ok === true }, null, 2));
-    if (!results[1]?.ok) process.exitCode = 1;
+    const disabledPassed = results.find((result) => result.reasoningPolicy === "disabled")?.ok === true;
+    console.log(JSON.stringify({ results, before, after, physicalCalls, reservationsDelta: after.reserved - before.reserved, usageDelta: after.calls - before.calls, disabledPassed }, null, 2));
+    if (!disabledPassed) process.exitCode = 1;
   } finally { await browser?.close(); if (signedIn) { const cleanup = await auth.auth.signOut({ scope: "local" }); assert.equal(cleanup.error, null, "session cleanup failed"); } }
 }
 main().catch((error) => { console.error(error instanceof Error ? error.message : "diagnostic failed"); process.exitCode = 1; });

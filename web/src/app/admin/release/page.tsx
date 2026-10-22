@@ -18,6 +18,8 @@ type Readiness = {
     publishedQuestions: number;
     trustedExplanationCount: number;
     contestsWithFullExam: number;
+    aiCredentialHttpStatus: number | null;
+    extractionModels: string[];
   };
 };
 
@@ -34,6 +36,8 @@ const labels: Record<string, string> = {
   publishedQuestionBank: "Banco real com pelo menos 30 questões elegíveis",
   trustedExplanations: "Comentários validados para todo o banco elegível",
   contestQuestionCoverage: "Ao menos um concurso com prova de 30 questões disponível",
+  aiCredentialValid: "Credencial OpenRouter validada sem chamada de geração",
+  freeExtractionModelsAvailable: "Modelos de extração disponíveis com preço zero no catálogo live",
 };
 
 export default function ReleaseReadinessPage() {
@@ -99,6 +103,8 @@ export default function ReleaseReadinessPage() {
         <p>Questões elegíveis: {data.snapshot.publishedQuestions}</p>
         <p>Comentários validados: {data.snapshot.trustedExplanationCount}</p>
         <p>Concursos com prova completa: {data.snapshot.contestsWithFullExam}</p>
+        <p>Autenticação OpenRouter: {data.snapshot.aiCredentialHttpStatus || "indisponível"}</p>
+        <p>Modelos de extração: {data.snapshot.extractionModels?.join(", ") || "não configurados"}</p>
       </section>
     </div> : null}
     {error && <p role="alert" className="mt-6 text-red-200">{error}</p>}

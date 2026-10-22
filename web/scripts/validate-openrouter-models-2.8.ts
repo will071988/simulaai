@@ -29,6 +29,7 @@ async function main() {
     const paths: string[] = [];
     let mode = "EMPTY_BODY";
     globalThis.fetch = async (input, init) => {
+      if (String(input).endsWith("/auth/key")) return Response.json({ data: { is_free_tier: true } });
       if (String(input).endsWith("/models")) return Response.json(catalog);
       physical++;
       const body = JSON.parse(String(init?.body)); paths.push(body.model);
@@ -88,6 +89,18 @@ async function main() {
     globalThis.fetch = async () => Response.json({ data: [{ ...reasoningCatalog.data[0], reasoning: { mandatory: true } }] });
     const mandatory = await new OpenRouterProvider(models[0]).generate({ taskType: "EXTRACT_CONCURSO", prompt: "fixture", input: {}, promptVersion: "fixture", reasoningPolicy: "disabled" }, async () => { throw new Error("must not reserve"); });
     assert.equal(mandatory.errorCode, "MODEL_UNAVAILABLE");
+    for (const status of [401, 403]) {
+      let credentialChecks = 0; let invalidKeyReservations = 0; let invalidKeyLogs = 0;
+      globalThis.fetch = async (input) => { assert.ok(String(input).endsWith("/auth/key")); credentialChecks++; return new Response(null, { status }); };
+      const invalidKeyProvider = new OpenRouterProvider(models[0]);
+      const invalidKeyDeps = { ...deps, providers: () => ({ openrouter: invalidKeyProvider }), modelProvider: () => invalidKeyProvider, reserveBudget: async () => { invalidKeyReservations++; return true; }, logUsage: async () => { invalidKeyLogs++; } };
+      const invalidKeyBudget = new GenerationBudget(10);
+      for (let index = 0; index < 2; index++) {
+        const result = await generateWithFallback({ taskType: "EXTRACT_CONCURSO", prompt: "fixture", input: {}, promptVersion: "invalid-key-fixture" }, { budget: invalidKeyBudget }, invalidKeyDeps);
+        assert.equal(result.errorCode, "AUTH_CONFIGURATION_ERROR"); assert.equal(result.httpStatus, status); assert.deepEqual(result.attempts, []);
+      }
+      assert.equal(credentialChecks, 1); assert.equal(invalidKeyReservations, 0); assert.equal(invalidKeyLogs, 0); assert.equal(invalidKeyBudget.calls, 0);
+    }
   } finally { globalThis.fetch = originalFetch; if (oldKey === undefined) delete process.env.OPENROUTER_API_KEY; else process.env.OPENROUTER_API_KEY = oldKey; if (oldOrder === undefined) delete process.env.AI_OPENROUTER_MODEL_ORDER; else process.env.AI_OPENROUTER_MODEL_ORDER = oldOrder; }
   const raw = "Instituto Exemplo. Cargo: Analista Administrativo. Escolaridade: nível superior. São 10 vagas. Inscrições de 01/10/2026 até 20/10/2026.";
   const valid = ExtractConcursoSchema.parse({ orgao: "Instituto Exemplo", banca: "Cebraspe", vagas: 10, status: null, cargos: ["Analista Administrativo"], escolaridade: ["SUPERIOR"], evidence: { vagas: "São 10 vagas", cargos: "Cargo: Analista Administrativo" } });

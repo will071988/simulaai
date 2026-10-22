@@ -1,5 +1,5 @@
 import type { AIProvider } from "./provider";
-import type { AIRequest, AIResult } from "./types";
+import type { AIProviderHealth, AIRequest, AIResult } from "./types";
 import { CircuitBreaker } from "./provider";
 import { generationFetch, type GenerationPermit } from "./generationBudget";
 import { isProviderModelAllowed } from "./config";
@@ -59,13 +59,23 @@ export class OpenRouterProvider implements AIProvider {
   name = "openrouter";
   model: string;
   private cb = new CircuitBreaker();
+  private credentialHealth?: Promise<AIProviderHealth>;
   constructor(model?: string) {
     this.model = model || process.env.AI_OPENROUTER_MODEL || "openrouter/free";
   }
-  async healthCheck() {
-    if (this.cb.isOpen()) return { healthy: false };
-    if (!process.env.OPENROUTER_API_KEY) return { healthy: false };
-    return { healthy: true };
+  async healthCheck(): Promise<AIProviderHealth> {
+    if (this.cb.isOpen()) return { healthy: false, errorCode: "PROVIDER_UNAVAILABLE" };
+    if (!process.env.OPENROUTER_API_KEY) return { healthy: false, errorCode: "SKIPPED_NOT_CONFIGURED" };
+    // Registry instances belong to one GenerationBudget/execution. Never turn a
+    // failed credential into repeated paid/admitted generation attempts.
+    this.credentialHealth ||= (async () => {
+      try {
+        const response = await fetch("https://openrouter.ai/api/v1/auth/key", { headers: { Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}` }, signal: AbortSignal.timeout(10000), redirect: "error", cache: "no-store" });
+        await response.body?.cancel();
+        return { healthy: response.ok, credentialHttpStatus: response.status, ...(response.ok ? {} : { errorCode: response.status === 401 || response.status === 403 ? "AUTH_CONFIGURATION_ERROR" : "PROVIDER_UNAVAILABLE" }) };
+      } catch { return { healthy: false, errorCode: "PROVIDER_UNAVAILABLE" }; }
+    })();
+    return this.credentialHealth;
   }
   async generate<T>(req: AIRequest, permit?: GenerationPermit): Promise<AIResult<T>> {
     let start = Date.now();
