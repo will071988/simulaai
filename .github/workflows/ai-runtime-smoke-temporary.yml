@@ -1,0 +1,48 @@
+name: AI runtime smoke (temporary)
+
+on:
+  push:
+    branches:
+      - test/ai-runtime-smoke-20261023
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Validate required secret
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -euo pipefail
+          test -n "$CRON_SECRET" || { echo "CRON_SECRET_MISSING"; exit 10; }
+
+      - name: Provider smoke (free-only guard)
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -euo pipefail
+          code=$(curl -sS -o /tmp/smoke.json -w "%{http_code}" \
+            -X POST \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            "https://simulaai-kappa.vercel.app/api/collector/provider-smoke")
+          echo "HTTP=$code"
+          cat /tmp/smoke.json
+          test "$code" = "200"
+          node -e 'const x=require("/tmp/smoke.json"); if(!x.ok) process.exit(20);'
+
+      - name: Single real pending item (limit=1)
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -euo pipefail
+          code=$(curl -sS -o /tmp/pending.json -w "%{http_code}" \
+            -X POST \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            "https://simulaai-kappa.vercel.app/api/collector/pending?limit=1")
+          echo "HTTP=$code"
+          cat /tmp/pending.json
+          test "$code" = "200"
