@@ -36,7 +36,7 @@ export function httpError(status: number): string {
 }
 
 export function parsedResult<T>(provider: string, model: string, raw: string, effectiveModel: string, start: number, httpStatus: number): AIResult<T> {
-  const common = { provider, model, requestedModel: model, effectiveModel, latencyMs: Date.now() - start, httpStatus };
+  const common = { provider, model, requestedModel: model, effectiveModel, latencyMs: Date.now() - start, httpStatus, bodyPresent: Boolean(raw.trim()) };
   if (!raw.trim()) return { ...common, ok: false, success: false, errorCode: "EMPTY_BODY", jsonClassification: "EMPTY_BODY", parseSuccess: false };
   try { return { ...common, ok: true, success: true, data: parseStructuredJson<T>(raw), parseSuccess: true, raw }; }
   catch (error) { const invalidObject = error instanceof Error && error.message === "INVALID_JSON_OBJECT"; return { ...common, ok: false, success: false, errorCode: invalidObject ? "INVALID_SCHEMA" : "INVALID_JSON", parseSuccess: invalidObject }; }

@@ -130,9 +130,10 @@ async function main() {
         return Response.json({ model: "effective-fixture", choices: [{ message: { content: '```json\n{"ok":true}\n```' } }] });
       };
       const result = await provider.generateStructured(request, async () => { reservations++; return true; });
-      assert.equal(result.success, true); assert.equal(result.effectiveModel, "effective-fixture"); assert.equal(physical, 1); assert.equal(reservations, 1);
+      assert.equal(result.success, true); assert.equal(result.bodyPresent, true); assert.equal(result.effectiveModel, "effective-fixture"); assert.equal(physical, 1); assert.equal(reservations, 1);
       globalThis.fetch = async () => Response.json({ choices: [], candidates: [] });
-      assert.equal((await provider.generateStructured(request, async () => true)).errorCode, "EMPTY_BODY");
+      const empty = await provider.generateStructured(request, async () => true);
+      assert.equal(empty.errorCode, "EMPTY_BODY"); assert.equal(empty.bodyPresent, false);
       globalThis.fetch = async () => new Response(null, { status: 401 });
       assert.equal((await provider.generateStructured(request, async () => true)).errorCode, "AUTH_CONFIGURATION_ERROR");
     }
