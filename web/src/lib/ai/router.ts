@@ -77,7 +77,7 @@ export function isFallbackError(code?: string): boolean {
   return ["TIMEOUT", "EMPTY_BODY", "INVALID_JSON", "429", "HTTP_5XX", "PROVIDER_UNAVAILABLE", "MODEL_UNAVAILABLE"].includes(code || "") || /^HTTP_5\d\d$/.test(code || "");
 }
 
-export async function generateWithFallback<T>(req: AIRequest, opts?: { validate?: (d: unknown) => boolean; semanticValidate?: (d: unknown) => boolean; budget?: GenerationBudget }, deps: RouterDependencies = dependencies): Promise<AIResult<T> & { degraded?: boolean }> {
+export async function generateWithFallback<T>(req: AIRequest, opts?: { decode?: (d: unknown) => T; validate?: (d: unknown) => boolean; semanticValidate?: (d: unknown) => boolean; budget?: GenerationBudget }, deps: RouterDependencies = dependencies): Promise<AIResult<T> & { degraded?: boolean }> {
   try {
     if (!req.prompt?.trim() || !req.promptVersion || JSON.stringify(req.input) === undefined) throw new Error("INVALID_INPUT");
   } catch { return { ok: false, provider: "none", model: "", latencyMs: 0, errorCode: "INVALID_INPUT" }; }
@@ -117,9 +117,15 @@ export async function generateWithFallback<T>(req: AIRequest, opts?: { validate?
     if (budget.calls >= budget.limit) return { ...last, errorCode: "BUDGET_EXHAUSTED", attempts, degraded: true };
     const beforeCalls = budget.calls;
     const result = p.generateStructured ? await p.generateStructured<T>(req, () => budget.reserve(deps.reserveBudget)) : await p.generate<T>(req, () => budget.reserve(deps.reserveBudget));
-    const invalidSchema = result.ok && opts?.validate && !opts.validate(result.data);
-    const semanticError = result.ok && !invalidSchema && opts?.semanticValidate && !opts.semanticValidate(result.data);
-    last = { ...result, ok: result.ok && !invalidSchema && !semanticError, success: result.ok && !invalidSchema && !semanticError, requestedModel: p.model, effectiveModel: result.effectiveModel || "MODEL_EFFECTIVE_UNKNOWN", ...(semanticError ? { errorCode: "SCHEMA_SEMANTIC_ERROR" } : invalidSchema ? { errorCode: "INVALID_SCHEMA" } : result.errorCode === "BUDGET_EXCEEDED" ? { errorCode: "BUDGET_EXHAUSTED" } : {}) };
+    let decoded = result.data;
+    let decodingIssue: string | undefined;
+    if (result.ok && opts?.decode) {
+      try { decoded = opts.decode(result.data); }
+      catch (error) { decoded = undefined; decodingIssue = error instanceof Error && error.message === "INVALID_EVIDENCE_REFERENCE" ? "INVALID_EVIDENCE_REFERENCE" : "INVALID_MODEL_OUTPUT"; }
+    }
+    const invalidSchema = result.ok && (Boolean(decodingIssue) || Boolean(opts?.validate && !opts.validate(decoded)));
+    const semanticError = result.ok && !invalidSchema && opts?.semanticValidate && !opts.semanticValidate(decoded);
+    last = { ...result, data: decoded, ok: result.ok && !invalidSchema && !semanticError, success: result.ok && !invalidSchema && !semanticError, requestedModel: p.model, effectiveModel: result.effectiveModel || "MODEL_EFFECTIVE_UNKNOWN", ...(decodingIssue ? { validationIssues: [decodingIssue] } : {}), ...(semanticError ? { errorCode: "SCHEMA_SEMANTIC_ERROR" } : invalidSchema ? { errorCode: "INVALID_SCHEMA" } : result.errorCode === "BUDGET_EXCEEDED" ? { errorCode: "BUDGET_EXHAUSTED" } : {}) };
     if (budget.calls > beforeCalls) {
       attempts.push({ provider: name, requestedModel: p.model, effectiveModel: last.effectiveModel!, latencyMs: last.latencyMs, errorCode: last.errorCode });
       await deps.logUsage(p.name, p.model, req.taskType, last.ok, last.latencyMs, last.errorCode, JSON.stringify(req.input).length, result.raw?.length, last.effectiveModel);
@@ -127,12 +133,17 @@ export async function generateWithFallback<T>(req: AIRequest, opts?: { validate?
     }
     if (last.ok) {
       execution.failures.set(key, 0); execution.health.set(key, "healthy");
-      await deps.setCached(inputHash, req.promptVersion, p.name, p.model, result.data);
+      await deps.setCached(inputHash, req.promptVersion, p.name, p.model, last.data);
       return { ...last, attempts };
+    }
+    if (!isFallbackError(last.errorCode)) {
+      // Rejected facts/input belong to this document. They must stop its
+      // fallback, but must not open a provider outage circuit for other items.
+      execution.health.set(key, "degraded");
+      return { ...last, attempts, degraded: true };
     }
     const failures = (execution.failures.get(key) || 0) + 1;
     execution.failures.set(key, failures); execution.health.set(key, failures >= 2 ? "unavailable" : "degraded");
-    if (!isFallbackError(last.errorCode)) return { ...last, attempts, degraded: true };
   }
   return { ...last, success: false, attempts, degraded: true };
 }

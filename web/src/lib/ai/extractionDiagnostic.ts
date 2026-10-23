@@ -1,10 +1,9 @@
-import { z } from "zod";
 import { generateWithFallback, smokeDependencies } from "./router";
 import { GenerationBudget } from "./generationBudget";
-import { closeSchemaObjects } from "./structured";
 import { EXTRACT_CONCURSO_PROMPT } from "../collector/extractConcursoWithAI";
 import { ExtractConcursoSchema } from "../collector/schemas";
 import { extractionSemanticIssues } from "../collector/extractionSemantics";
+import { buildGroundedExtraction } from "../collector/extractionGrounding";
 
 export const EXTRACTION_DIAGNOSTIC_TEXT = [
   "EXERCÍCIO SINTÉTICO. Não representa um concurso real.",
@@ -24,6 +23,7 @@ export const EXTRACTION_DIAGNOSTIC_TEXT = [
 export async function runExtractionDiagnostic(model: string, reasoningPolicy: "provider-default" | "disabled", provider = "openrouter") {
   const budget = new GenerationBudget(1);
   const title = "INSTITUTO MUNICIPAL DE ESTUDOS APLICADOS";
+  const grounded = buildGroundedExtraction(title, EXTRACTION_DIAGNOSTIC_TEXT, "Cebraspe");
   let semanticIssues: string[] = [];
   const semantic = (input: unknown) => {
     const parsed = ExtractConcursoSchema.safeParse(input);
@@ -31,7 +31,7 @@ export async function runExtractionDiagnostic(model: string, reasoningPolicy: "p
     semanticIssues = extractionSemanticIssues(parsed.data, title, EXTRACTION_DIAGNOSTIC_TEXT, "Cebraspe");
     return semanticIssues.length === 0;
   };
-  const result = await generateWithFallback({ taskType: "EXTRACT_CONCURSO", promptVersion: "synthetic-grounded-extraction-diagnostic-v3", prompt: EXTRACT_CONCURSO_PROMPT, input: { title, sourceName: "Cebraspe", snippet: EXTRACTION_DIAGNOSTIC_TEXT }, schema: closeSchemaObjects(z.toJSONSchema(ExtractConcursoSchema, { io: "input" })), reasoningPolicy }, { budget, validate: (input) => ExtractConcursoSchema.safeParse(input).success, semanticValidate: semantic }, smokeDependencies(provider, model));
+  const result = await generateWithFallback({ taskType: "EXTRACT_CONCURSO", promptVersion: "synthetic-grounded-extraction-diagnostic-v4", prompt: EXTRACT_CONCURSO_PROMPT, input: grounded.input, schema: grounded.schema, reasoningPolicy }, { budget, decode: grounded.decode, validate: (input) => ExtractConcursoSchema.safeParse(input).success, semanticValidate: semantic }, smokeDependencies(provider, model));
   const parsed = ExtractConcursoSchema.safeParse(result.data);
   const schemaIssues = parsed.success ? [] : parsed.error.issues.map((issue) => ({ path: issue.path.join("."), code: issue.code }));
   return { ok: result.ok, fixture: "synthetic-extraction", reasoningPolicy, requestedModel: model, effectiveModel: result.effectiveModel || "MODEL_EFFECTIVE_UNKNOWN", httpStatus: result.httpStatus ?? null, latencyMs: result.latencyMs, bodyPresent: result.bodyPresent ?? false, parseSuccess: result.parseSuccess ?? false, schemaSuccess: parsed.success, schemaIssues, semanticSuccess: result.ok && semantic(result.data), semanticIssues, generationDiagnostics: result.generationDiagnostics ?? null, physicalCalls: budget.calls, errorCode: result.errorCode ?? null, rateLimit: result.rateLimit ?? null, upstreamError: result.upstreamError ?? null };

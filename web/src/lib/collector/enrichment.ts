@@ -28,7 +28,7 @@ export function enrichDocument(title: string, text: string): Enriched {
   const add = (field: string, value: unknown, re: RegExp, confidence = 0.9) => { const line = lineFor(all, re); if (value != null && line) evidence.push({ field, value, evidence: line.slice(0, 500), confidence }); };
   const vagasLine = lineFor(all, /\b\d{1,5}\s+vagas?\b/i); const vagas = vagasLine ? Number(vagasLine.match(/\b(\d{1,5})\s+vagas?/i)?.[1]) : null; add("vagas", vagas, /\b\d{1,5}\s+vagas?\b/i);
   const crLine = lineFor(all, /cadastro\s+(?:de\s+)?reserva|\bCR\b/i); const cadastro_reserva = crLine?.match(/\b(\d{1,5})\s+(?:vagas?\s+)?(?:para\s+)?(?:cadastro|CR)/i)?.[1]; add("cadastro_reserva", cadastro_reserva ? Number(cadastro_reserva) : null, /cadastro\s+(?:de\s+)?reserva|\bCR\b/i);
-  const salaryPattern = /(?:sal[aá]rio|remunera[cç][aã]o|vencimento)[^\n]{0,80}R\$\s*[\d.]+,\d{2}/i;
+  const salaryPattern = /(?:sal[aá]rio|remunera[cç][aã]o|vencimento|subs[ií]dio)[^\n]{0,80}R\$\s*[\d.]+,\d{2}/i;
   const salaryLine = lineFor(all, salaryPattern); const salaryRaw = salaryLine?.match(/R\$\s*([\d.]+,\d{2})/i)?.[1]; const salario = salaryRaw ? money(salaryRaw) : null; add("salario", salario, salaryPattern);
   const inscricaoLine = lineFor(all, /inscri/i); const inscricao_inicio = inscricaoLine ? brDate(inscricaoLine) : null; const inscricao_fim = inscricaoLine ? [...inscricaoLine.matchAll(/\b\d{2}\/\d{2}\/\d{4}\b/g)].map((m) => brDate(m[0]))[1] || null : null; add("inscricao_inicio", inscricao_inicio, /inscri/i); add("inscricao_fim", inscricao_fim, /inscri/i);
   const provaLine = lineFor(all, /\bprova(?:s)?\b/i); const prova_data = provaLine ? brDate(provaLine) : null; add("prova_data", prova_data, /\bprova(?:s)?\b/i);

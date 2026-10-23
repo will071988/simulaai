@@ -1,0 +1,57 @@
+import assert from "node:assert/strict";
+import { buildGroundedExtraction, validateStoredExtraction } from "../src/lib/collector/extractionGrounding";
+import { extractionSemanticIssues } from "../src/lib/collector/extractionSemantics";
+import { isLiteralExtractionEvidence } from "../src/lib/collector/extractionEvidence";
+import { ExtractConcursoSchema } from "../src/lib/collector/schemas";
+
+const title = "Instituto Exemplo";
+const raw = "Instituto Exemplo. Cebraspe. São 12 vagas. Remuneração:\nR$ 4.200,00. Cargo: Analista Administrativo. UF: AL.";
+const grounded = buildGroundedExtraction(title, raw, "Cebraspe");
+const first = grounded.input.excerpts[0].id;
+const decoded = grounded.decode({ orgao: title, banca: "Cebraspe", vagas: 12, salario: 4200, status: null, evidence: { orgao: [first], vagas: [first], salario: [first] } });
+assert.ok(ExtractConcursoSchema.safeParse(decoded).success);
+assert.deepEqual(extractionSemanticIssues(decoded, title, raw, "Cebraspe"), []);
+assert.ok(decoded.evidence?.salario?.includes("Remuneração: R$ 4.200,00"));
+assert.equal(isLiteralExtractionEvidence("salario", decoded.evidence?.salario, raw, 4200), true);
+assert.throws(() => grounded.decode({ orgao: title, banca: "Cebraspe", vagas: 12, status: null, evidence: { vagas: ["E999999"] } }));
+assert.throws(() => grounded.decode({ orgao: title, banca: "Cebraspe", vagas: 12, status: null, evidence: { vagas: "São 12 vagas" } }));
+assert.throws(() => grounded.decode({ orgao: title, banca: "Cebraspe", vagas: 12, status: null, evidence: {} }), /INVALID_EVIDENCE_REFERENCE/);
+assert.throws(() => grounded.decode({ orgao: title, banca: "Cebraspe", vagas: 12, status: null, evidence: { orgao: [first], vagas: [] } }), /INVALID_EVIDENCE_REFERENCE/, "a non-null value cannot hide behind an empty reference list");
+const absent = grounded.decode({ orgao: title, banca: "Cebraspe", vagas: null, status: null, evidence: { orgao: [first], vagas: [], status: [], irrelevant_extra: [] } });
+assert.equal(absent.evidence?.vagas, undefined); assert.equal(absent.evidence?.status, undefined); assert.equal("irrelevant_extra" in (absent.evidence || {}), false);
+assert.throws(() => buildGroundedExtraction(title, " \n\t ", "Cebraspe"), /INVALID_INPUT/);
+
+// A valid reference is not enough: the value must match its field context.
+assert.ok(extractionSemanticIssues({ ...decoded, salario: 12 }, title, raw, "Cebraspe").includes("salario:UNSUPPORTED_NUMBER"));
+assert.ok(extractionSemanticIssues({ ...decoded, vagas: 4200 }, title, raw, "Cebraspe").includes("vagas:UNSUPPORTED_NUMBER"));
+const subsidyRaw = "Instituto Exemplo. Cebraspe. SUBSÍDIO INICIAL: R$ 20.000,00, de acordo com a lei.";
+assert.deepEqual(extractionSemanticIssues({ orgao: title, banca: "Cebraspe", vagas: null, salario: 20000, status: null, evidence: { salario: "SUBSÍDIO INICIAL: R$ 20.000,00" } }, title, subsidyRaw, "Cebraspe"), [], "public-service subsidy is an explicit remuneration label, not unsupported income");
+assert.ok(extractionSemanticIssues({ orgao: title, banca: "Cebraspe", vagas: null, salario: 120, status: null, evidence: { salario: ["Referência ao salário no projeto.", "Taxa de inscrição: R$ 120,00."] } }, title, "Instituto Exemplo. Referência ao salário no projeto.\nUma seção independente. Taxa de inscrição: R$ 120,00.", "Cebraspe").includes("salario:UNSUPPORTED_NUMBER"), "separate quotes must not turn an application fee into salary");
+const thousands = "Instituto Exemplo. Cebraspe. Quantidade de vagas: 1.000.";
+assert.deepEqual(extractionSemanticIssues({ orgao: title, banca: "Cebraspe", vagas: 1000, status: null, evidence: { vagas: "Quantidade de vagas: 1.000." } }, title, thousands, "Cebraspe"), []);
+
+const longRaw = `${raw} ${"Parágrafo sem informações sobre o certame. ".repeat(180)} Inscrições de 02/11/2026 até 28/11/2026. Salário: R$ 9.500,00.`;
+const long = buildGroundedExtraction(title, longRaw, "Cebraspe");
+assert.ok(long.input.excerpts.some((item) => item.text.includes("28/11/2026")), "date evidence beyond the old 4000-char prefix must be selected");
+assert.ok(JSON.stringify(long.input).length < 5000, "bounded evidence selection must preserve the transport budget");
+const tableHeavy = buildGroundedExtraction(title, `${raw} ${"Cargo: Auxiliar. Remuneração: R$ 2.000,00. Quantidade de vagas: 5. ".repeat(140)} Inscrições de 02/11/2026 até 28/11/2026.`, "Cebraspe");
+assert.ok(tableHeavy.input.excerpts.some((item) => item.text.includes("28/11/2026")), "a salary-heavy table must not crowd out registration dates");
+const late = long.input.excerpts.find((item) => item.text.includes("28/11/2026"))!;
+const separated = long.decode({ orgao: title, banca: "Cebraspe", vagas: null, status: null, evidence: { orgao: [long.input.excerpts[0].id, late.id] } });
+assert.equal(typeof separated.evidence?.orgao, "string", "over-citation must be reduced to the supporting source quote without changing the fact");
+assert.equal(isLiteralExtractionEvidence("orgao", separated.evidence?.orgao, longRaw, title), true);
+const roleRaw = `Instituto Exemplo. Cebraspe. Cargo: Analista Administrativo. ${"Uma seção independente sem informações sobre funções. ".repeat(120)} Cargo: Técnico Legislativo.`;
+const roles = buildGroundedExtraction(title, roleRaw, "Cebraspe");
+const roleIds = roles.input.excerpts.filter((excerpt) => /Analista|Técnico|Legislativo/.test(excerpt.text)).map((excerpt) => excerpt.id);
+const multipleRoles = roles.decode({ orgao: title, banca: "Cebraspe", vagas: null, status: null, cargos: ["Analista Administrativo", "Técnico Legislativo"], evidence: { orgao: [roles.input.excerpts[0].id], cargos: roleIds } });
+assert.ok(Array.isArray(multipleRoles.evidence?.cargos), "separate roles must keep their individual source quotes");
+assert.deepEqual(extractionSemanticIssues(multipleRoles, title, roleRaw, "Cebraspe"), []);
+const forgedRole = { orgao: title, banca: "Cebraspe", vagas: null, status: null, cargos: ["Analista Administrativo"], evidence: { cargos: ["Cargo: Analista", "Departamento Administrativo"] } };
+assert.ok(extractionSemanticIssues(forgedRole, title, "Instituto Exemplo. Cargo: Analista. Uma informação separada. Departamento Administrativo.", "Cebraspe").includes("cargos:UNSUPPORTED_ROLE"));
+assert.ok(extractionSemanticIssues({ orgao: "Tribunal Superior Exemplo", banca: "Cebraspe", vagas: null, status: null, escolaridade: ["SUPERIOR"], evidence: { escolaridade: "Tribunal Superior Exemplo" } }, "Tribunal Superior Exemplo", "Tribunal Superior Exemplo. Cebraspe.", "Cebraspe").includes("escolaridade:UNSUPPORTED_LEVEL"), "institution names must not become proof of an academic qualification");
+const escaped = buildGroundedExtraction(title.repeat(100), '"\\'.repeat(5000), "Cebraspe");
+assert.ok(JSON.stringify(escaped.input).length < 5000, "escaped PDF text must not truncate the input JSON at the adapter boundary");
+assert.equal(validateStoredExtraction(decoded, title, raw, "Cebraspe").success, true);
+const invalidStored = validateStoredExtraction({ ...decoded, evidence: { vagas: "citação inventada" } }, title, raw, "Cebraspe");
+assert.equal(invalidStored.success, false); assert.ok(invalidStored.issues.includes("vagas:NON_LITERAL_EVIDENCE"), "invalid stored AI data must not suppress a fresh extraction forever");
+console.log("grounded extraction: source-only references, bounded late evidence, no fabricated joins, canonical quotes and field-bound numerical proof passed");

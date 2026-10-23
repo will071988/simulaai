@@ -5,9 +5,10 @@ import type { AIProvider } from "../src/lib/ai/provider";
 import type { AIRequest, AIResult } from "../src/lib/ai/types";
 
 const req: AIRequest = { taskType: "EXTRACT_CONCURSO", prompt: "test", input: { public: "fixture" }, promptVersion: "budget-test" };
-async function scenario(options: { cached?: boolean; unhealthy?: boolean; blocked?: boolean; missing?: boolean; statuses?: number[]; dailyLimit?: number; runLimit?: number; fallback?: boolean; rpcFails?: boolean; invalidSchema?: boolean }) {
+async function scenario(options: { cached?: boolean; unhealthy?: boolean; blocked?: boolean; missing?: boolean; statuses?: number[]; dailyLimit?: number; runLimit?: number; fallback?: boolean; rpcFails?: boolean; invalidSchema?: boolean; decode?: "success" | "fail" }) {
   let reservations = 0, physical = 0;
   const statuses = [...(options.statuses || [200])];
+  let cacheValue: unknown, decodes = 0, logs = 0;
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => {
     physical++;
@@ -31,7 +32,7 @@ async function scenario(options: { cached?: boolean; unhealthy?: boolean; blocke
     order: options.fallback ? ["a", "b"] : ["a"],
     modelAllowed: () => !options.blocked,
     getCached: async <T>() => options.cached ? { value: "cached" } as T : null,
-    setCached: async () => {}, logUsage: async () => {}, sleep: async () => {},
+    setCached: async (_hash, _version, _provider, _model, value) => { cacheValue = value; }, logUsage: async () => { logs++; }, sleep: async () => {},
     reserveBudget: async () => {
       if (options.rpcFails) throw new Error("RPC_FAILURE");
       if (reservations >= (options.dailyLimit ?? 50)) return false;
@@ -40,10 +41,11 @@ async function scenario(options: { cached?: boolean; unhealthy?: boolean; blocke
     },
   };
   try {
-    const result = await generateWithFallback(req, { budget, validate: options.invalidSchema ? () => false : undefined }, deps);
+    const result = await generateWithFallback(req, { budget, validate: options.invalidSchema ? () => false : undefined, decode: options.decode ? () => { decodes++; if (options.decode === "fail") throw new Error("private decoder error must not leak"); return { value: "canonical" }; } : undefined }, deps);
     assert.equal(reservations, physical, "every admitted reservation must correspond to a transport call");
     assert.equal(budget.calls, physical);
-    return { reservations, physical, result };
+    assert.equal(logs, physical);
+    return { reservations, physical, result, cacheValue, decodes };
   } finally { globalThis.fetch = originalFetch; }
 }
 
@@ -58,6 +60,12 @@ async function main() {
   assert.equal(exhausted.result.errorCode, "BUDGET_EXHAUSTED");
   assert.equal((await scenario({ statuses: [429, 200], runLimit: 1 })).physical, 1);
   assert.equal((await scenario({ invalidSchema: true })).result.errorCode, "INVALID_SCHEMA");
+  const decoded = await scenario({ decode: "success" });
+  assert.deepEqual(decoded.cacheValue, { value: "canonical" }); assert.deepEqual(decoded.result.data, decoded.cacheValue); assert.equal(decoded.decodes, 1);
+  const decodeFailed = await scenario({ decode: "fail", fallback: true });
+  assert.equal(decodeFailed.result.errorCode, "INVALID_SCHEMA"); assert.equal(decodeFailed.physical, 1); assert.equal(decodeFailed.cacheValue, undefined);
+  assert.doesNotMatch(JSON.stringify(decodeFailed.result), /private decoder/);
+  assert.equal((await scenario({ cached: true, decode: "fail" })).decodes, 0, "canonical cache must not be decoded twice");
   const shared = new GenerationBudget(2);
   let reserved = 0;
   const outcomes = await Promise.all(Array.from({ length: 5 }, () => shared.reserve(async () => { reserved++; return true; })));

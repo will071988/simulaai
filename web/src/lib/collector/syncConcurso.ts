@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ExtractConcurso } from "./schemas";
+import { isLiteralExtractionEvidence, extractionEvidenceQuotes, serializeExtractionEvidence } from "./extractionEvidence";
 
 function normalizeOrgao(v: string | null): string | null {
   if (!v) return null;
@@ -85,10 +86,7 @@ export async function syncConcursoFromDocument(
   const deterministic = enrichDocument(doc.title, doc.rawText || "");
   const rawText = doc.rawText || "";
   const aiEvidence = extracted.evidence || {};
-  const hasLiteralEvidence = (field: keyof typeof aiEvidence) => {
-    const snippet = aiEvidence[field];
-    return typeof snippet === "string" && snippet.trim().length >= 3 && rawText.toLocaleLowerCase("pt-BR").includes(snippet.trim().toLocaleLowerCase("pt-BR"));
-  };
+  const hasLiteralEvidence = (field: keyof typeof aiEvidence) => isLiteralExtractionEvidence(field, aiEvidence[field], rawText, extracted[field]);
   const aiValue = <T>(field: keyof typeof aiEvidence, value: T | null | undefined): T | null => hasLiteralEvidence(field) && value != null ? value : null;
   const fallbackLocation = resolveLocation(orgao, doc.identityTitle || doc.title);
   const loc = deterministic.scope
@@ -104,7 +102,7 @@ export async function syncConcursoFromDocument(
     cargos: deterministic.cargos.length ? deterministic.cargos : aiValue("cargos", extracted.cargos) || [],
     escolaridade: deterministic.escolaridade.length ? deterministic.escolaridade : aiValue("escolaridade", extracted.escolaridade) || [],
   };
-  const evidencedStatus = resolveEvidencedContestStatus({ value: extracted.status, evidence: aiEvidence.status, rawText, sourceTier: tier });
+  const evidencedStatus = resolveEvidencedContestStatus({ value: extracted.status, evidence: extractionEvidenceQuotes(aiEvidence.status).find((quote) => normalizeText(quote).includes(normalizeText(extracted.status || "").replace(/_/g, " "))), rawText, sourceTier: tier });
   const hot = calcHotScoreWithReasons({ status: evidencedStatus, vagas: values.vagas, salario: values.salario, prova_data: values.prova_data, inscricao_inicio: values.inscricao_inicio, inscricao_fim: values.inscricao_fim, tier });
   const identity = extractIdentitySignals({ title: doc.identityTitle || doc.title, url: doc.contestUrl || doc.canonicalUrl, rawText: doc.rawText, sourceName: doc.sourceName, orgao, banca, cargos: values.cargos, escolaridade: values.escolaridade });
   const incomingAliases = [...aliasesFromIdentity(identity, doc.sourceName, doc.canonicalUrl), ...aliasesFromText(`${doc.title}\n${doc.rawText || ""}`, doc.sourceName, doc.canonicalUrl)];
@@ -187,7 +185,7 @@ export async function syncConcursoFromDocument(
   ];
   for (const [field, snippet] of Object.entries(aiEvidence)) {
     const value = (values as Record<string, unknown>)[field];
-    if (typeof snippet === "string" && value != null && hasLiteralEvidence(field as keyof typeof aiEvidence)) evidence.push({ field, value, evidence: snippet, confidence: 0.65 });
+    if (value != null && hasLiteralEvidence(field as keyof typeof aiEvidence)) evidence.push({ field, value, evidence: serializeExtractionEvidence(snippet)!, confidence: 0.65 });
   }
   const changes: Record<string, unknown>[] = [];
   if (matched) {
@@ -199,7 +197,7 @@ export async function syncConcursoFromDocument(
       const decision = fieldDecisions[field];
       if (!decision || decision.decision !== "ACCEPT_NEW" || JSON.stringify(oldValue) === JSON.stringify(decision.resolvedValue)) continue;
       const matchingEvidence = evidence.find((item) => item.field === field && JSON.stringify(item.value) === JSON.stringify(decision.resolvedValue));
-      changes.push({ field_name: field, old_value: oldValue, new_value: decision.resolvedValue, source_url: doc.canonicalUrl, source_name: doc.sourceName || null, source_tier: tier, evidence_text: matchingEvidence?.evidence || aiEvidence[field as keyof typeof aiEvidence] || doc.title, observed_at: doc.publishedAt || new Date().toISOString(), relationship_type: persistedRelationship });
+      changes.push({ field_name: field, old_value: oldValue, new_value: decision.resolvedValue, source_url: doc.canonicalUrl, source_name: doc.sourceName || null, source_tier: tier, evidence_text: matchingEvidence?.evidence || serializeExtractionEvidence(aiEvidence[field as keyof typeof aiEvidence]) || doc.title, observed_at: doc.publishedAt || new Date().toISOString(), relationship_type: persistedRelationship });
     }
   }
   if (!doc.documentId) throw new Error("COLLECTOR_DOCUMENT_REQUIRED");

@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 export const BRAZILIAN_STATE_CODES = ["AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS", "MG", "PA", "PB", "PR", "PE", "PI", "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO"] as const;
+const EvidenceQuoteSchema = z.union([z.string(), z.array(z.string()).min(1).max(4)]);
 
 export const ExtractConcursoSchema = z.object({
   orgao: z.string().nullable().transform((v) => (v ? v.slice(0, 100) : null)),
@@ -19,20 +20,20 @@ export const ExtractConcursoSchema = z.object({
   status: z.string().nullable().transform((v) => (v ? v.slice(0, 30) : null)),
   evidence: z
     .object({
-      orgao: z.string().optional(),
-      banca: z.string().optional(),
-      vagas: z.string().optional(),
-      status: z.string().optional(),
-      salario: z.string().optional(),
-      prova_data: z.string().optional(),
-      inscricao_inicio: z.string().optional(),
-      inscricao_fim: z.string().optional(),
-      cadastro_reserva: z.string().optional(),
-      cargos: z.string().optional(),
-      escolaridade: z.string().optional(),
-      scope: z.string().optional(),
-      state_code: z.string().optional(),
-      city: z.string().optional(),
+      orgao: EvidenceQuoteSchema.optional(),
+      banca: EvidenceQuoteSchema.optional(),
+      vagas: EvidenceQuoteSchema.optional(),
+      status: EvidenceQuoteSchema.optional(),
+      salario: EvidenceQuoteSchema.optional(),
+      prova_data: EvidenceQuoteSchema.optional(),
+      inscricao_inicio: EvidenceQuoteSchema.optional(),
+      inscricao_fim: EvidenceQuoteSchema.optional(),
+      cadastro_reserva: EvidenceQuoteSchema.optional(),
+      cargos: EvidenceQuoteSchema.optional(),
+      escolaridade: EvidenceQuoteSchema.optional(),
+      scope: EvidenceQuoteSchema.optional(),
+      state_code: EvidenceQuoteSchema.optional(),
+      city: EvidenceQuoteSchema.optional(),
     })
     .optional(),
 });

@@ -12,6 +12,7 @@ import { finishOperationalJob, observeApiRoute, startOperationalJob } from "@/li
 import { pendingLimit, pendingClaimArguments, pendingProviderOrder } from "@/lib/collector/pendingLimit";
 import { extractionSemanticIssues } from "@/lib/collector/extractionSemantics";
 import { authorizeCollectorControl } from "@/lib/collector/controlAuth";
+import { validateStoredExtraction } from "@/lib/collector/extractionGrounding";
 
 async function handleGET(req: Request) {
   if (!isCronAuthorized(req)) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
@@ -77,12 +78,14 @@ async function handlePending(triggerType: "CRON" | "MANUAL", limit: 1 | 5, provi
         failed++;
         continue;
       }
-      const deterministic = ExtractConcursoSchema.safeParse(meta.ai_extracted);
       const identityTitle = typeof meta.identity_title === "string" ? meta.identity_title : d.title || "";
       const sourceName = typeof meta.source_name === "string" ? meta.source_name : undefined;
-      const res = deterministic.success ? null : await extractConcursoWithAI(identityTitle, d.raw_text || "", budget, sourceName);
-      if (deterministic.success || (res?.ok && res.data)) {
-        const parsed = deterministic.success ? deterministic : ExtractConcursoSchema.safeParse(res?.data);
+      const stored = validateStoredExtraction(meta.ai_extracted, identityTitle, d.raw_text || "", sourceName);
+      const reusable = stored.success;
+      if (stored.issues.length) meta.ai_stored_extraction_issues = stored.issues;
+      const res = reusable ? null : await extractConcursoWithAI(identityTitle, d.raw_text || "", budget, sourceName);
+      if (reusable || (res?.ok && res.data)) {
+        const parsed = reusable && stored.success ? stored : ExtractConcursoSchema.safeParse(res?.data);
         if (!parsed.success) {
           await scheduleRetry(d, meta, "INVALID_SCHEMA");
           continue;
@@ -90,7 +93,7 @@ async function handlePending(triggerType: "CRON" | "MANUAL", limit: 1 | 5, provi
         const semanticIssues = extractionSemanticIssues(parsed.data, identityTitle, d.raw_text || "", sourceName);
         if (semanticIssues.length) {
           console.info(JSON.stringify({ event: "ai_extraction_semantic_rejection", issues: semanticIssues }));
-          await scheduleRetry(d, meta, "SCHEMA_SEMANTIC_ERROR");
+          await scheduleRetry(d, { ...meta, ai_semantic_issues: semanticIssues }, "SCHEMA_SEMANTIC_ERROR");
           continue;
         }
         const syncErr = await (async () => {
@@ -105,7 +108,7 @@ async function handlePending(triggerType: "CRON" | "MANUAL", limit: 1 | 5, provi
         }
         processed++;
       } else {
-        await scheduleRetry(d, meta, res?.errorCode || "AI_PENDING");
+        await scheduleRetry(d, { ...meta, ai_validation_issues: res?.validationIssues || [], ai_semantic_issues: res?.semanticIssues || [] }, res?.errorCode || "AI_PENDING");
       }
     }
     const counters = { claimed: (docs || []).length, processed, failed, ai_requests: budget.calls };

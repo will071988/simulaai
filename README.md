@@ -59,6 +59,44 @@ O client OpenRouter valida a credencial uma vez por instância da execução ant
 - Na execução de documentos reais, o worker interrompeu os lotes após erros de entrada/semântica, liberando claims e preservando a fila. A revisão `extract_concurso_v6_grounded` reforça que UF não deve ser inferida e trata apenas espaços/quebras de linha de PDF como formatação na comparação de citações. Palavras, acentos, pontuação e fatos continuam exigindo suporte na fonte. Testes cobrem citação equivalente com quebra de linha e rejeição de citação alterada.
 - O erro Groq HTTP 400 com código exato `json_validate_failed` é classificado como `INVALID_JSON`, permitindo fallback; outros HTTP 400 continuam sendo `INVALID_INPUT`. O texto/rascunho devolvido pelo provedor não é registrado. UFs são limitadas às 27 siglas válidas; uma citação de duas letras só é aceita como evidência de UF quando aparece explicitamente como token maiúsculo na fonte, não dentro de nomes de estados. O cliente real validou o edital ALPREV por fallback para Gemini; a ordem operacional foi ajustada para Gemini → Groq → OpenRouter.
 
+#### Correção do coletor: referências verificáveis (v7)
+
+A extração atual usa `extract_concurso_v7_source_refs`. Em vez de redigitar
+citações de PDF, o modelo aponta IDs de trechos selecionados no servidor. O input
+é limitado a aproximadamente 4 mil caracteres JSON de fonte, com diversidade de
+campos: tabelas de salário não devem esconder calendários de inscrição posteriores
+ao antigo prefixo de 4 mil caracteres. O schema de transporte só admite os IDs
+efetivamente enviados; referências desconhecidas e valores sem suporte são rejeitados.
+
+O servidor reconstrói provas literais mínimas exclusivamente dos trechos citados,
+preservando todos os fatos afirmados. Cargos em pontos diferentes ficam em uma
+lista de citações, sem inventar uma frase unindo trechos distantes. O formato
+canônico aceita a string legada ou até quatro citações, com limite total de 640
+caracteres por campo na nova extração. Over-citação é reduzida à prova do valor;
+fatos não são descartados para forçar validação. `evidence_text` persiste listas
+como JSON textual auditável. Validação e sincronização usam o mesmo comparador.
+
+O cache guarda o resultado canônico decodificado, nunca IDs sem contexto. Extrações
+salvas em metadata só são reutilizadas se também passarem na semântica; dados
+salvos inválidos não devem impedir uma geração nova indefinidamente. Falhas gravam
+apenas códigos de validação/semântica, sem resposta bruta ou raciocínio.
+
+Rejeição semântica/schema interrompe o documento sem fallback, mas não abre o
+circuito de indisponibilidade para os próximos documentos. Duas falhas transitórias
+do provedor continuam abrindo o circuito. Números exigem contexto do campo;
+`SUBSÍDIO INICIAL` é reconhecido como remuneração, taxa de inscrição não é salário,
+e “Tribunal Superior” não comprova escolaridade superior. Guards FREE-ONLY,
+1200 tokens, timeout e limites 10/run e 50/day foram preservados.
+
+O cliente real validou, antes da publicação desta revisão, o edital da CGU que
+falhava anteriormente: OpenRouter Dots, HTTP 200, schema/semântica aprovados,
+uma geração e aproximadamente 4,4 s. A ordem operacional prioriza OpenRouter →
+Gemini → Groq, mantendo somente modelos e contas já autorizados para uso gratuito.
+`npm run test:2.8` inclui regressões de referências, contexto numérico, provas
+separadas, circuito e persistência PostgreSQL; `test:ai-budget` cobre decode/cache
+e o pareamento de reserva/chamada/log. Essa evidência não declara a fila concluída
+nem o lançamento comercial aprovado.
+
 ## Planejamento original de trilhas (referência histórica, não catálogo publicado)
 1. Polícia Federal (1.000 vagas previstas)
 2. PRF (533 vagas — Cebraspe)

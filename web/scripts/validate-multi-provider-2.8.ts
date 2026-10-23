@@ -58,6 +58,10 @@ async function main() {
     const circuit = fixture({ openrouter: ["EMPTY_BODY", "TIMEOUT"], groq: ["", "", ""] }); globalThis.fetch = circuit.fetch;
     for (let i = 0; i < 3; i++) assert.equal((await generateWithFallback(request, { budget: circuit.budget }, circuit.deps)).ok, true);
     assert.deepEqual(circuit.calls, ["openrouter", "groq", "openrouter", "groq", "groq"]);
+    const rejectedFacts = fixture({ openrouter: ["SCHEMA_SEMANTIC_ERROR", "SCHEMA_SEMANTIC_ERROR", ""] }); globalThis.fetch = rejectedFacts.fetch;
+    for (let index = 0; index < 2; index++) assert.equal((await generateWithFallback(request, { budget: rejectedFacts.budget }, rejectedFacts.deps)).errorCode, "SCHEMA_SEMANTIC_ERROR");
+    assert.equal((await generateWithFallback(request, { budget: rejectedFacts.budget }, rejectedFacts.deps)).ok, true);
+    assert.equal(rejectedFacts.physicalCount(), 3, "two rejected documents must not open the provider outage circuit");
     const ordered = fixture({ openrouter: [""], groq: [""] }, ["groq", "openrouter", "groq"]); globalThis.fetch = ordered.fetch;
     assert.equal((await generateWithFallback(request, { budget: ordered.budget }, ordered.deps)).provider, "groq");
     const missing = fixture({ unavailable: [""], groq: [""] }); missing.deps.configured = () => false; globalThis.fetch = missing.fetch;

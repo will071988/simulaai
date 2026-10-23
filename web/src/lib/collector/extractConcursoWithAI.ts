@@ -1,9 +1,9 @@
 import { generateWithFallback } from "@/lib/ai/router";
 import { ExtractConcursoSchema, type ExtractConcurso } from "./schemas";
 import type { GenerationBudget } from "@/lib/ai/generationBudget";
-import { z } from "zod";
-import { closeSchemaObjects } from "@/lib/ai/structured";
 import { extractionSemanticIssues } from "./extractionSemantics";
+import { buildGroundedExtraction, EXTRACTION_PROMPT_VERSION } from "./extractionGrounding";
+import type { AIResult } from "../ai/types";
 
 export const EXTRACT_CONCURSO_PROMPT = [
   "Extraia concurso. Retorne somente um objeto JSON de dados, sem explicação nem o schema.",
@@ -15,25 +15,32 @@ export const EXTRACT_CONCURSO_PROMPT = [
   "escolaridade é uma lista de FUNDAMENTAL, MEDIO, TECNICO ou SUPERIOR. scope é NACIONAL, ESTADUAL, MUNICIPAL, REGIONAL ou null. state_code é uma UF de duas letras ou null.",
   "Só preencha state_code se a sigla estiver explicitamente no trecho; nunca converta o nome do estado em sigla por conhecimento externo. Use null em caso de dúvida.",
   "Use status null quando não houver declaração literal do status. Não invente fatos, localização ou valores ausentes.",
-  "evidence é um objeto contendo apenas citações literais curtas do texto, até 120 caracteres por campo. Cada chave deve ser o nome do campo correspondente.",
-  "Nas citações, quebras de linha e espaços repetidos de PDF podem virar espaços simples, mas preserve todas as palavras, acentos e pontuação. Não junte trechos separados por outras palavras.",
-  "OMITA de evidence todos os campos ausentes ou null. Nunca escreva justificativas como 'não informado', 'não consta', null ou paráfrases em evidence. Use {} se não houver citações.",
-  "Prompt v6 grounded, com tipos explícitos, UF não inferida e evidências literais de PDF.",
+  "A fonte está em excerpts, cada trecho com id E001, E002 etc. Em evidence, indique arrays de IDs existentes para os campos extraídos, por exemplo {vagas:[\"E004\"]}. Nunca redigite citações.",
+  "Todo valor não-null e toda lista não vazia exige IDs de evidência. A banca pode ser copiada de sourceName sem ID. Se não conseguir citar um campo, retorne null ou [] em vez de adivinhar.",
+  "Use apenas trechos fornecidos. Para campos com vários cargos ou fatos, cite até quatro IDs. Trechos distantes serão mantidos como citações separadas. Não cite IDs inexistentes nem combine palavras de trechos diferentes para inventar um cargo.",
+  "Cite o trecho com o rótulo do campo e o valor, não só um número isolado; por exemplo, salário precisa de contexto de remuneração, não de taxa de inscrição.",
+  "OMITA de evidence campos ausentes ou null. Use {} quando não houver fatos extraídos. Não escreva justificativas ou texto livre em evidence.",
+  "Prompt v7 grounded por referências verificáveis da fonte.",
 ].join(" ");
 
-export async function extractConcursoWithAI(title: string, rawText: string, budget?: GenerationBudget, sourceName?: string) {
-  return generateWithFallback<ExtractConcurso>({
+export async function extractConcursoWithAI(title: string, rawText: string, budget?: GenerationBudget, sourceName?: string): Promise<AIResult<ExtractConcurso> & { degraded?: boolean }> {
+  let grounded: ReturnType<typeof buildGroundedExtraction>;
+  try { grounded = buildGroundedExtraction(title, rawText, sourceName); }
+  catch { return { ok: false, provider: "none", model: "", latencyMs: 0, errorCode: "INVALID_INPUT" }; }
+  let semanticIssues: string[] = [];
+  const result = await generateWithFallback<ExtractConcurso>({
     taskType: "EXTRACT_CONCURSO",
     prompt: EXTRACT_CONCURSO_PROMPT,
-    input: { title, sourceName, snippet: rawText.slice(0, 4000) },
-    promptVersion: "extract_concurso_v6_grounded",
-    schema: closeSchemaObjects(z.toJSONSchema(ExtractConcursoSchema, { io: "input" })),
+    input: grounded.input,
+    promptVersion: EXTRACTION_PROMPT_VERSION,
+    schema: grounded.schema,
     reasoningPolicy: process.env.AI_EXTRACT_REASONING_POLICY === "disabled" ? "disabled" : "provider-default",
-  }, { validate: (data) => ExtractConcursoSchema.safeParse(data).success, semanticValidate: (data) => {
+  }, { decode: grounded.decode, validate: (data) => ExtractConcursoSchema.safeParse(data).success, semanticValidate: (data) => {
     const parsed = ExtractConcursoSchema.safeParse(data);
     if (!parsed.success) return false;
-    const issues = extractionSemanticIssues(parsed.data, title, rawText, sourceName);
-    if (issues.length) console.info(JSON.stringify({ event: "ai_extraction_semantic_rejection", issues }));
-    return issues.length === 0;
+    semanticIssues = extractionSemanticIssues(parsed.data, title, rawText, sourceName);
+    if (semanticIssues.length) console.info(JSON.stringify({ event: "ai_extraction_semantic_rejection", issues: semanticIssues }));
+    return semanticIssues.length === 0;
   }, budget });
+  return { ...result, ...(grounded.decodingIssues.length ? { validationIssues: grounded.decodingIssues } : {}), semanticIssues: result.errorCode === "SCHEMA_SEMANTIC_ERROR" ? semanticIssues : [] };
 }

@@ -99,6 +99,13 @@ async function main() {
     }
     const wrongSource = await cdnDocument("https://cdn.cebraspe.org.br/concursos/EXEMPLO_26/arquivos/wrong-source.pdf", source.id);
     await assert.rejects(syncConcursoFromDocument(svc, wrongSource, cdnExtracted, 1), /EVIDENCE_TIER_MISMATCH/);
+    const formattedRaw = "Prefeitura de Formato. FGV. Remuneração:\nR$ 4.200,00.";
+    const formattedDoc = (await db.query<{ id: string }>("insert into collector_documents(source_id,canonical_url,source_url,title,raw_text,content_hash,status) values($1,'https://conhecimento.fgv.br/concursos/formato2026','https://conhecimento.fgv.br/concursos/formato2026','Prefeitura de Formato Edital 01/2026',$2,md5($2),'PARSED') returning id", [source.id, formattedRaw])).rows[0];
+    const formattedQuotes = ["Prefeitura de Formato", "Remuneração: R$ 4.200,00."];
+    const formattedResult = await syncConcursoFromDocument(svc, { title: "Prefeitura de Formato Edital 01/2026", rawText: formattedRaw, canonicalUrl: "https://conhecimento.fgv.br/concursos/formato2026", sourceName: "FGV", documentId: formattedDoc.id }, { orgao: "Prefeitura de Formato", banca: "FGV", vagas: null, salario: 4200, status: null, evidence: { salario: formattedQuotes } }, 1);
+    assert.equal(Number((await db.query<{ salario: number }>("select salario from concursos where id=$1", [formattedResult!.concursoId])).rows[0].salario), 4200, "a quote accepted by validation must also reach atomic persistence");
+    const formattedEvidence = (await db.query<{ evidence_text: string }>("select evidence_text from concurso_field_evidence where concurso_id=$1 and field_name='salario'", [formattedResult!.concursoId])).rows;
+    assert.ok(formattedEvidence.some((row) => row.evidence_text === JSON.stringify(formattedQuotes)), "independent quotations must remain an auditable list in the persisted evidence");
     await db.query("update collector_sources set tier=2 where id=$1", [cebraspe.id]);
     const wrongTier = await cdnDocument("https://cdn.cebraspe.org.br/concursos/EXEMPLO_26/arquivos/wrong-tier.pdf");
     await assert.rejects(syncConcursoFromDocument(svc, wrongTier, cdnExtracted, 1), /EVIDENCE_TIER_MISMATCH/);
