@@ -5,6 +5,7 @@ import { observeApiRoute } from "@/lib/observability/operations";
 import { loadPublishedQuestionPool } from "@/lib/simulados/published-pool";
 import { OpenRouterProvider } from "@/lib/ai/openrouter";
 import { configuredOpenRouterModels, fetchOpenRouterCatalog, approveFreeModel } from "@/lib/ai/openrouterModels";
+import { providerConfiguration } from "@/lib/ai/registry";
 
 export const dynamic = "force-dynamic";
 const noStore = { "Cache-Control": "private, no-store" };
@@ -104,6 +105,7 @@ async function handleGET(request: Request) {
         contestsWithFullExam,
         aiCredentialHttpStatus: credential.credentialHttpStatus || null,
         extractionModels,
+        aiProviders: providerConfiguration(),
       },
     },
   });

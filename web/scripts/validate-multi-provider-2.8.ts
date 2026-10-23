@@ -7,7 +7,10 @@ import type { AIRequest, AIResult } from "../src/lib/ai/types";
 import { GroqProvider } from "../src/lib/ai/groq";
 import { GeminiProvider } from "../src/lib/ai/gemini";
 import { CerebrasProvider } from "../src/lib/ai/cerebras";
-import { parseStructuredJson, closeSchemaObjects, parsedResult } from "../src/lib/ai/structured";
+import { OpenAIProvider } from "../src/lib/ai/openai";
+import { providerConfigured, providerConfiguration } from "../src/lib/ai/registry";
+import { aiConfig } from "../src/lib/ai/config";
+import { parseStructuredJson, closeSchemaObjects, parsedResult, openAICompletion } from "../src/lib/ai/structured";
 import { getAIRetryDecision } from "../src/lib/collector/retryPolicy";
 import { ExtractConcursoSchema } from "../src/lib/collector/schemas";
 
@@ -75,19 +78,46 @@ async function main() {
     assert.equal(getAIRetryDecision("SKIPPED_NOT_CONFIGURED", 2).incrementRetry, false);
   } finally { globalThis.fetch = originalFetch; }
 
-  const names = ["GROQ_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY", "GEMINI_API_KEY", "CEREBRAS_API_KEY", "AI_GROQ_MODEL", "AI_GEMINI_MODEL", "AI_CEREBRAS_MODEL", "AI_GROQ_FREE_TIER_CONFIRMED", "AI_GEMINI_FREE_TIER_CONFIRMED", "AI_CEREBRAS_FREE_TIER_CONFIRMED"];
+  const names = ["GROQ_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY", "GEMINI_API_KEY", "CEREBRAS_API_KEY", "OPENAI_API_KEY", "AI_OPENAI_MODEL", "AI_GROQ_MODEL", "AI_GEMINI_MODEL", "AI_CEREBRAS_MODEL", "AI_GROQ_FREE_TIER_CONFIRMED", "AI_GEMINI_FREE_TIER_CONFIRMED", "AI_CEREBRAS_FREE_TIER_CONFIRMED"];
   const previous = Object.fromEntries(names.map((name) => [name, process.env[name]]));
   try {
     for (const name of names) delete process.env[name];
-    for (const provider of [new GroqProvider(), new GeminiProvider(), new CerebrasProvider()]) {
+    for (const provider of [new GroqProvider(), new GeminiProvider(), new CerebrasProvider(), new OpenAIProvider()]) {
       const result = await provider.generateStructured(request, async () => { throw new Error("must not reserve"); });
       assert.equal(result.errorCode, "SKIPPED_NOT_CONFIGURED"); assert.equal(result.success, false); assert.equal(result.effectiveModel, "MODEL_EFFECTIVE_UNKNOWN");
     }
+    process.env.OPENAI_API_KEY = "fixture-only"; process.env.AI_OPENAI_MODEL = "gpt-4.1-mini";
+    let openAIRequests = 0;
+    globalThis.fetch = async () => { openAIRequests++; throw new Error("OpenAI must remain blocked in FREE-ONLY"); };
+    assert.equal(providerConfigured("openai"), true);
+    assert.equal((await new OpenAIProvider().healthCheck()).healthy, false);
+    assert.equal((await new OpenAIProvider().generateStructured(request, async () => { throw new Error("must not reserve"); })).errorCode, "AUTH_CONFIGURATION_ERROR");
+    assert.equal(openAIRequests, 0);
+    assert.equal(providerConfiguration().find((item) => item.provider === "openai")?.status, "BLOCKED_FREE_ONLY");
+    assert.doesNotMatch(JSON.stringify(providerConfiguration()), /fixture-only/);
     for (const providerName of ["groq", "gemini", "cerebras"]) {
       process.env[`AI_${providerName.toUpperCase()}_MODEL`] = "fixture-model";
       process.env[`AI_${providerName.toUpperCase()}_FREE_TIER_CONFIRMED`] = "true";
     }
     process.env.GROQ_API_KEY = "fixture-only"; process.env.GOOGLE_GENERATIVE_AI_API_KEY = "fixture-only"; process.env.CEREBRAS_API_KEY = "fixture-only";
+    const previousOrder = aiConfig.providerOrder;
+    try {
+      aiConfig.providerOrder = ["groq", "gemini", "openrouter"];
+      for (const name of ["groq", "gemini"]) {
+        const row = providerConfiguration().find((item) => item.provider === name);
+        assert.equal(row?.enabled, true);
+        delete process.env[`AI_${name.toUpperCase()}_FREE_TIER_CONFIRMED`];
+        assert.equal(providerConfiguration().find((item) => item.provider === name)?.enabled, false);
+        process.env[`AI_${name.toUpperCase()}_FREE_TIER_CONFIRMED`] = "true";
+      }
+    } finally { aiConfig.providerOrder = previousOrder; }
+    globalThis.fetch = async (input, init) => {
+      assert.equal(String(input), "https://api.openai.com/v1/chat/completions");
+      const payload = JSON.parse(String(init?.body));
+      assert.equal(payload.max_completion_tokens, 1200); assert.equal(payload.max_tokens, undefined); assert.equal(payload.store, false);
+      return Response.json({ model: "gpt-4.1-mini", choices: [{ message: { content: '{"ok":true}' } }] });
+    };
+    assert.equal((await openAICompletion("openai", "gpt-4.1-mini", "https://api.openai.com/v1/chat/completions", "fixture-only", request, async () => true)).ok, true);
     for (const provider of [new GroqProvider(), new GeminiProvider(), new CerebrasProvider()]) {
       let physical = 0, reservations = 0;
       globalThis.fetch = async (input, init) => {

@@ -39,7 +39,17 @@ O POST manual de `/api/collector/pending?limit=1|5` e o diagnóstico `/api/colle
 
 `scripts/diagnose-extraction-reasoning.ts` planeja até duas chamadas sintéticas pelo client real: comportamento padrão do provider e reasoning desativado quando o catálogo informa suporte. Ele aborta antes da segunda condição se houver erro de configuração/input/budget. O script não processa AI_PENDING nem persiste a extração; registra reservas/logs normais e retorna somente status, flags e contadores de tokens. Nenhum raciocínio textual é registrado. `AI_EXTRACT_REASONING_POLICY` permanece `provider-default` até validação live; `disabled` não aumenta max_tokens/timeout e pula modelos de reasoning obrigatório ou sem suporte declarado à desativação.
 
-O client valida a credencial uma vez por instância da execução antes de admitir geração. HTTP 401/403 interrompe sem reserva e sem retry/fallback. O readiness comercial também verifica autenticação e pricing live: presença de variável não é prova de chave válida. O diagnóstico pareado aborta no primeiro erro de configuração, input ou budget.
+O client OpenRouter valida a credencial uma vez por instância da execução antes de admitir geração. HTTP 401/403 interrompe sem reserva e sem retry/fallback. O readiness comercial também verifica autenticação e pricing live: presença de variável não é prova de chave válida. O diagnóstico pareado aborta no primeiro erro de configuração, input ou budget.
+
+### Provedores de IA e configuração local
+
+- Provedores registrados: OpenRouter, Groq, Gemini, Cerebras e OpenAI direto. Credenciais são exclusivamente server-side, sem prefixo `NEXT_PUBLIC_`.
+- O `.env` da raiz é a origem local de chaves; não é carregado automaticamente pelo Next.js em `web/`. Sincronizar os valores necessários com `web/.env.local` e as variáveis protegidas do Vercel, preservando as demais configurações. Não versionar arquivos reais de credenciais.
+- OpenRouter exige modelo aprovado com pricing live zero. Groq/Gemini/Cerebras exigem modelo explícito e `AI_<PROVIDER>_FREE_TIER_CONFIRMED=true`, somente após confirmação do responsável pela conta. Autenticação/catálogo HTTP 200 não comprovam gratuidade ou quota de geração.
+- Nesta configuração, o responsável confirmou os planos gratuitos de Groq e Gemini; os modelos selecionados devem existir nos catálogos oficiais antes da habilitação. A ordem de fallback é controlada por `AI_PROVIDER_ORDER`; cada chamada física mantém a reserva e o log existentes. Limites permanecem 10 por execução e 50/dia.
+- OpenAI direto permanece bloqueado pelo contrato FREE-ONLY, mesmo com chave válida. Créditos/assinatura ChatGPT não habilitam chamadas nesse fluxo. Cerebras permanece sem chave/configuração nesta instalação.
+- `/admin/release` mostra credenciais presentes, modelos e estados de configuração (`ENABLED`, `NOT_CONFIGURED`, `BLOCKED_FREE_ONLY`, etc.). Esses estados não substituem a prova de geração e validação semântica.
+- Para verificar uma extração sintética em um único provedor habilitado, um administrador pode usar `POST /api/collector/provider-smoke?provider=groq&fixture=synthetic-extraction&reasoningPolicy=provider-default` (ou `provider=gemini`). O modelo é o configurado no servidor, sem override pelo solicitante. A execução tem limite de uma geração, orçamento/log normais, não processa fila e não grava conteúdo de concurso. Provedores não habilitados retornam 409 com zero chamadas. O diagnóstico OpenRouter continua usando `model=<modelo aprovado>`.
 
 ## Planejamento original de trilhas (referência histórica, não catálogo publicado)
 1. Polícia Federal (1.000 vagas previstas)

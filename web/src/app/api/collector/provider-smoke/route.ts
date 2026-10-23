@@ -3,7 +3,7 @@ import { z } from "zod";
 import { authorizeCollectorControl } from "@/lib/collector/controlAuth";
 import { GenerationBudget, generationTimeoutMs } from "@/lib/ai/generationBudget";
 import { aiConfig } from "@/lib/ai/config";
-import { providerConfigured } from "@/lib/ai/registry";
+import { providerConfigured, providerConfiguration } from "@/lib/ai/registry";
 import { generateWithFallback, smokeDependencies } from "@/lib/ai/router";
 import { observeApiRoute } from "@/lib/observability/operations";
 import { approveFreeModel, fetchOpenRouterCatalog, OPENROUTER_FREE_CANDIDATES } from "@/lib/ai/openrouterModels";
@@ -14,7 +14,7 @@ async function handleGET(request: Request) {
   if (access.status !== 200) return NextResponse.json({ error: "Unauthorized" }, { status: access.status, headers: { "Cache-Control": "private, no-store" } });
   try {
     const catalog = await fetchOpenRouterCatalog();
-    return NextResponse.json({ candidates: OPENROUTER_FREE_CANDIDATES.map((model) => ({ model, ...approveFreeModel(model, catalog) })) }, { headers: { "Cache-Control": "private, no-store" } });
+    return NextResponse.json({ providers: providerConfiguration(), candidates: OPENROUTER_FREE_CANDIDATES.map((model) => ({ model, ...approveFreeModel(model, catalog) })) }, { headers: { "Cache-Control": "private, no-store" } });
   } catch { return NextResponse.json({ error: "MODEL_CATALOG_UNAVAILABLE" }, { status: 503 }); }
 }
 
@@ -22,6 +22,15 @@ async function handlePOST(request: Request) {
   const access = await authorizeCollectorControl(request);
   if (access.status !== 200) return NextResponse.json({ error: "Unauthorized" }, { status: access.status, headers: { "Cache-Control": "private, no-store" } });
   if (process.env.AI_ENABLED !== "true" || !aiConfig.freeOnly) return NextResponse.json({ error: "SMOKE_CONFIGURATION_BLOCKED" }, { status: 409 });
+  const params = new URL(request.url).searchParams;
+  const explicitProvider = params.get("provider");
+  if (explicitProvider && explicitProvider !== "openrouter") {
+    const provider = providerConfiguration().find((item) => item.provider === explicitProvider);
+    if (!provider) return NextResponse.json({ error: "INVALID_PROVIDER" }, { status: 400, headers: { "Cache-Control": "private, no-store" } });
+    if (params.has("model") || params.get("fixture") !== "synthetic-extraction" || params.get("reasoningPolicy") !== "provider-default") return NextResponse.json({ error: "INVALID_DIAGNOSTIC" }, { status: 400, headers: { "Cache-Control": "private, no-store" } });
+    if (!provider.enabled) return NextResponse.json({ error: "PROVIDER_NOT_ENABLED", provider: provider.provider, status: provider.status, physicalCalls: 0 }, { status: 409, headers: { "Cache-Control": "private, no-store" } });
+    return NextResponse.json({ provider: explicitProvider, ...await runExtractionDiagnostic(provider.models[0], "provider-default", explicitProvider) }, { headers: { "Cache-Control": "private, no-store" } });
+  }
   const schema = z.object({ ok: z.literal(true) }).strict();
   const explicitModel = new URL(request.url).searchParams.get("model");
   if (explicitModel) {

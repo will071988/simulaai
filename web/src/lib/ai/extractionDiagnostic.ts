@@ -21,10 +21,10 @@ export const EXTRACTION_DIAGNOSTIC_TEXT = [
   ...Array.from({ length: 12 }, () => "O exercício reúne procedimentos administrativos e orientações gerais de participação. As informações factuais são somente as explicitamente descritas neste texto sintético."),
 ].join("\n");
 
-export async function runExtractionDiagnostic(model: string, reasoningPolicy: "provider-default" | "disabled") {
+export async function runExtractionDiagnostic(model: string, reasoningPolicy: "provider-default" | "disabled", provider = "openrouter") {
   const budget = new GenerationBudget(1);
   const title = "INSTITUTO MUNICIPAL DE ESTUDOS APLICADOS";
   const semantic = (input: unknown) => { const parsed = ExtractConcursoSchema.safeParse(input); return parsed.success && extractionSemanticIssues(parsed.data, title, EXTRACTION_DIAGNOSTIC_TEXT, "Cebraspe").length === 0; };
-  const result = await generateWithFallback({ taskType: "EXTRACT_CONCURSO", promptVersion: "synthetic-grounded-extraction-diagnostic-v1", prompt: EXTRACT_CONCURSO_PROMPT, input: { title, sourceName: "Cebraspe", snippet: EXTRACTION_DIAGNOSTIC_TEXT }, schema: closeSchemaObjects(z.toJSONSchema(ExtractConcursoSchema, { io: "input" })), reasoningPolicy }, { budget, validate: (input) => ExtractConcursoSchema.safeParse(input).success, semanticValidate: semantic }, smokeDependencies("openrouter", model));
+  const result = await generateWithFallback({ taskType: "EXTRACT_CONCURSO", promptVersion: "synthetic-grounded-extraction-diagnostic-v1", prompt: EXTRACT_CONCURSO_PROMPT, input: { title, sourceName: "Cebraspe", snippet: EXTRACTION_DIAGNOSTIC_TEXT }, schema: closeSchemaObjects(z.toJSONSchema(ExtractConcursoSchema, { io: "input" })), reasoningPolicy }, { budget, validate: (input) => ExtractConcursoSchema.safeParse(input).success, semanticValidate: semantic }, smokeDependencies(provider, model));
   return { ok: result.ok, fixture: "synthetic-extraction", reasoningPolicy, requestedModel: model, effectiveModel: result.effectiveModel || "MODEL_EFFECTIVE_UNKNOWN", httpStatus: result.httpStatus ?? null, latencyMs: result.latencyMs, bodyPresent: result.bodyPresent ?? false, parseSuccess: result.parseSuccess ?? false, schemaSuccess: ExtractConcursoSchema.safeParse(result.data).success, semanticSuccess: result.ok && semantic(result.data), generationDiagnostics: result.generationDiagnostics ?? null, physicalCalls: budget.calls, errorCode: result.errorCode ?? null, rateLimit: result.rateLimit ?? null, upstreamError: result.upstreamError ?? null };
 }

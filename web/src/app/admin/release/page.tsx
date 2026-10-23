@@ -20,6 +20,7 @@ type Readiness = {
     contestsWithFullExam: number;
     aiCredentialHttpStatus: number | null;
     extractionModels: string[];
+    aiProviders: Array<{ provider: string; configured: boolean; enabled: boolean; models: string[]; status: string }>;
   };
 };
 
@@ -105,6 +106,11 @@ export default function ReleaseReadinessPage() {
         <p>Concursos com prova completa: {data.snapshot.contestsWithFullExam}</p>
         <p>Autenticação OpenRouter: {data.snapshot.aiCredentialHttpStatus || "indisponível"}</p>
         <p>Modelos de extração: {data.snapshot.extractionModels?.join(", ") || "não configurados"}</p>
+        <h3 className="mt-4 font-semibold">Provedores de IA — configuração</h3>
+        <p className="text-sm text-slate-400">Habilitado indica configuração; o diagnóstico controlado verifica geração e qualidade.</p>
+        <ul className="mt-2 space-y-1">
+          {data.snapshot.aiProviders?.map((provider) => <li key={provider.provider}>{provider.provider}: {provider.status} — {provider.models.join(", ") || "sem modelo"}</li>)}
+        </ul>
       </section>
     </div> : null}
     {error && <p role="alert" className="mt-6 text-red-200">{error}</p>}
