@@ -50,7 +50,7 @@ export function enrichDocument(title: string, text: string): Enriched {
     [/(?:ensino|n[ií]vel|escolaridade|requisito|forma[cç][aã]o)[^\n]{0,80}fundamental|fundamental\s+(?:completo|incompleto)/i, "FUNDAMENTAL"],
     [/(?:ensino|n[ií]vel|escolaridade|requisito|forma[cç][aã]o)[^\n]{0,80}m[eé]dio|m[eé]dio\s+(?:completo|incompleto)/i, "MEDIO"],
     [/(?:curso|ensino|n[ií]vel|escolaridade|requisito|forma[cç][aã]o)[^\n]{0,80}t[eé]cnic[oa]|t[eé]cnic[oa]\s+(?:completo|em\s+[A-Za-zÀ-ÿ])/i, "TECNICO"],
-    [/(?:ensino|n[ií]vel|escolaridade|requisito|forma[cç][aã]o)[^\n]{0,80}(?:superior|gradua[cç][aã]o)|(?:superior|gradua[cç][aã]o)\s+(?:complet[oa]|em\s+[A-Za-zÀ-ÿ])/i, "SUPERIOR"],
+    [/(?:ensino|n[ií]vel|escolaridade|requisito|forma[cç][aã]o)[^\n]{0,80}(?:superior|gradua[cç][aã]o)|(?:superior|gradua[cç][aã]o)\s+(?:complet[oa]|em\s+[A-Za-zÀ-ÿ])|\bbacharel(?:ado)?\b|\blicenciatura\b/i, "SUPERIOR"],
   ] as const;
   const matchedEducation = educationPatterns.filter(([pattern]) => pattern.test(all));
   const escolaridade = matchedEducation.map(([, level]) => level);

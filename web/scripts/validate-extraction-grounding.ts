@@ -36,6 +36,12 @@ assert.ok(long.input.excerpts.some((item) => item.text.includes("28/11/2026")), 
 assert.ok(JSON.stringify(long.input).length < 5000, "bounded evidence selection must preserve the transport budget");
 const tableHeavy = buildGroundedExtraction(title, `${raw} ${"Cargo: Auxiliar. Remuneração: R$ 2.000,00. Quantidade de vagas: 5. ".repeat(140)} Inscrições de 02/11/2026 até 28/11/2026.`, "Cebraspe");
 assert.ok(tableHeavy.input.excerpts.some((item) => item.text.includes("28/11/2026")), "a salary-heavy table must not crowd out registration dates");
+const degreeRaw = `Instituto Exemplo. Cebraspe. Etapa: comprovação de requisitos. ${"Uma seção sem declaração acadêmica. ".repeat(180)} Requisito: diploma de bacharel em Direito.`;
+const degree = buildGroundedExtraction(title, degreeRaw, "Cebraspe");
+const degreeIds = degree.input.excerpts.filter((excerpt) => /bacharel|diploma/.test(excerpt.text)).map((excerpt) => excerpt.id);
+assert.ok(degreeIds.length > 0, "a generic requirements heading must not crowd out the actual academic qualification");
+const degreeValue = degree.decode({ orgao: title, banca: "Cebraspe", vagas: null, status: null, escolaridade: ["SUPERIOR"], evidence: { orgao: [degree.input.excerpts[0].id], escolaridade: degreeIds } });
+assert.deepEqual(extractionSemanticIssues(degreeValue, title, degreeRaw, "Cebraspe"), []);
 const late = long.input.excerpts.find((item) => item.text.includes("28/11/2026"))!;
 const separated = long.decode({ orgao: title, banca: "Cebraspe", vagas: null, status: null, evidence: { orgao: [long.input.excerpts[0].id, late.id] } });
 assert.equal(typeof separated.evidence?.orgao, "string", "over-citation must be reduced to the supporting source quote without changing the fact");

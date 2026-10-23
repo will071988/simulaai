@@ -10,9 +10,11 @@ export const EXTRACT_CONCURSO_PROMPT = [
   "Campos: orgao,banca,vagas,salario,inscricao_inicio,inscricao_fim,prova_data,cadastro_reserva,cargos,escolaridade,scope,state_code,city,status,evidence.",
   "orgao, banca, vagas e status são obrigatórios no JSON; use null quando ausentes. Use [] para listas ausentes.",
   "Copie literalmente o nome completo do órgão e dos cargos: não abrevie nem reformule. Não confunda escolaridade com cargo.",
+  "Não converta o nome de um serviço, adjetivo ou título resumido do evento em cargo. Em outorga de delegações de serventias, use cargos [] se não houver denominação literal de cargo na fonte.",
   "vagas e cadastro_reserva são números inteiros ou null, nunca booleanos. salario é número ou null, sem R$ ou separadores de milhar.",
   "Use datas ISO YYYY-MM-DD apenas quando explícitas. Não suponha vagas zero para cadastro de reserva.",
   "escolaridade é uma lista de FUNDAMENTAL, MEDIO, TECNICO ou SUPERIOR. scope é NACIONAL, ESTADUAL, MUNICIPAL, REGIONAL ou null. state_code é uma UF de duas letras ou null.",
+  "Escolaridade exige trecho com grau acadêmico explícito, como ensino/nível superior, graduação, bacharelado ou licenciatura; não deduza do nome do cargo ou de uma menção genérica a requisitos.",
   "Só preencha state_code se a sigla estiver explicitamente no trecho; nunca converta o nome do estado em sigla por conhecimento externo. Use null em caso de dúvida.",
   "Use status null quando não houver declaração literal do status. Não invente fatos, localização ou valores ausentes.",
   "A fonte está em excerpts, cada trecho com id E001, E002 etc. Em evidence, indique arrays de IDs existentes para os campos extraídos, por exemplo {vagas:[\"E004\"]}. Nunca redigite citações.",
@@ -20,7 +22,7 @@ export const EXTRACT_CONCURSO_PROMPT = [
   "Use apenas trechos fornecidos. Para campos com vários cargos ou fatos, cite até quatro IDs. Trechos distantes serão mantidos como citações separadas. Não cite IDs inexistentes nem combine palavras de trechos diferentes para inventar um cargo.",
   "Cite o trecho com o rótulo do campo e o valor, não só um número isolado; por exemplo, salário precisa de contexto de remuneração, não de taxa de inscrição.",
   "OMITA de evidence campos ausentes ou null. Use {} quando não houver fatos extraídos. Não escreva justificativas ou texto livre em evidence.",
-  "Prompt v7 grounded por referências verificáveis da fonte.",
+  "Prompt v7.1 grounded por referências verificáveis da fonte.",
 ].join(" ");
 
 export async function extractConcursoWithAI(title: string, rawText: string, budget?: GenerationBudget, sourceName?: string): Promise<AIResult<ExtractConcurso> & { degraded?: boolean }> {

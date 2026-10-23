@@ -6,7 +6,7 @@ export const SCHOOLING_EVIDENCE_PATTERNS: Record<string, RegExp> = {
   FUNDAMENTAL: /(?:ensino|n[ií]vel|escolaridade|requisito|forma[cç][aã]o)[^.;\n]{0,80}fundamental|fundamental\s+completo/i,
   MEDIO: /(?:ensino|n[ií]vel|escolaridade|requisito|forma[cç][aã]o)[^.;\n]{0,80}m[eé]dio|m[eé]dio\s+completo/i,
   TECNICO: /(?:curso|ensino|n[ií]vel|escolaridade|requisito|forma[cç][aã]o|diploma)[^.;\n]{0,80}t[eé]cnic[oa]|t[eé]cnic[oa]\s+complet[oa]/i,
-  SUPERIOR: /(?:ensino|n[ií]vel|curso|escolaridade|requisito|forma[cç][aã]o|diploma)[^.;\n]{0,80}superior|gradua[cç][aã]o|superior\s+complet[oa]/i,
+  SUPERIOR: /(?:ensino|n[ií]vel|curso|escolaridade|requisito|forma[cç][aã]o|diploma)[^.;\n]{0,80}superior|gradua[cç][aã]o|superior\s+complet[oa]|\bbacharel(?:ado)?\b|\blicenciatura\b/i,
 };
 export function extractionEvidenceQuotes(value: unknown): string[] {
   return typeof value === "string" ? [value] : Array.isArray(value) && value.every((item) => typeof item === "string") ? value : [];

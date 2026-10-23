@@ -61,7 +61,7 @@ O client OpenRouter valida a credencial uma vez por instância da execução ant
 
 #### Correção do coletor: referências verificáveis (v7)
 
-A extração atual usa `extract_concurso_v7_source_refs`. Em vez de redigitar
+A extração atual usa `extract_concurso_v7_1_source_refs`. Em vez de redigitar
 citações de PDF, o modelo aponta IDs de trechos selecionados no servidor. O input
 é limitado a aproximadamente 4 mil caracteres JSON de fonte, com diversidade de
 campos: tabelas de salário não devem esconder calendários de inscrição posteriores
@@ -87,6 +87,11 @@ do provedor continuam abrindo o circuito. Números exigem contexto do campo;
 `SUBSÍDIO INICIAL` é reconhecido como remuneração, taxa de inscrição não é salário,
 e “Tribunal Superior” não comprova escolaridade superior. Guards FREE-ONLY,
 1200 tokens, timeout e limites 10/run e 50/day foram preservados.
+
+A seleção reserva espaço para a declaração acadêmica real (incluindo bacharelado
+e licenciatura), em vez de tratar uma seção genérica “comprovação de requisitos”
+como prova de escolaridade. As condições e alternativas permanecem no trecho
+literal citado; a categoria registra apenas o grau explicitamente presente.
 
 O cliente real validou, antes da publicação desta revisão, o edital da CGU que
 falhava anteriormente: OpenRouter Dots, HTTP 200, schema/semântica aprovados,

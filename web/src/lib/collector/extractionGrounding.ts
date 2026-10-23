@@ -4,7 +4,7 @@ import { closeSchemaObjects } from "../ai/structured";
 import { extractionSemanticIssues } from "./extractionSemantics";
 import { numericEvidenceMatches, SCHOOLING_EVIDENCE_PATTERNS, type ExtractionEvidenceField } from "./extractionEvidence";
 
-export const EXTRACTION_PROMPT_VERSION = "extract_concurso_v7_source_refs";
+export const EXTRACTION_PROMPT_VERSION = "extract_concurso_v7_1_source_refs";
 const FIELDS = ["orgao", "banca", "vagas", "salario", "inscricao_inicio", "inscricao_fim", "prova_data", "cadastro_reserva", "cargos", "escolaridade", "scope", "state_code", "city", "status"] as const;
 const MAX_TEXT = 4000;
 const MAX_SPAN = 640;
@@ -82,6 +82,8 @@ function sourceExcerpts(rawText: string) {
     selected.add(index); used += size;
   };
   for (let index = 0; index < Math.min(6, excerpts.length); index++) add(index);
+  const educationIndex = excerpts.findIndex((item, position) => Object.values(SCHOOLING_EVIDENCE_PATTERNS).some((pattern) => pattern.test(`${item.text} ${excerpts[position + 1]?.text || ""}`)));
+  if (educationIndex >= 0) { add(educationIndex); add(educationIndex + 1); }
   // Reserve room for different fact types before a long salary/vacancy table
   // consumes the entire input budget and hides the registration calendar.
   for (const pattern of [/\d+\s+vagas?|vagas?\s*[:=]/i, /sal[aá]rio|remunera[cç][aã]o|vencimento|subs[ií]dio/i, /inscri[cç].{0,100}\d|\d.{0,60}inscri[cç]/i, /prova(?:s)?.{0,100}\d|\d.{0,60}prova(?:s)?/i, /cargo\s*\d*\s*:/i, /requisito|escolaridade/i, /abrang[eê]ncia|lota[cç][aã]o/i]) {
