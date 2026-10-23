@@ -109,6 +109,8 @@ async function main() {
   assert.ok(extractionSemanticIssues({ ...valid, orgao: "Instituição inventada" }, "Instituto Exemplo", raw, "Cebraspe").includes("orgao:UNSUPPORTED_IDENTITY"));
   assert.ok(extractionSemanticIssues({ ...valid, prova_data: "2026-02-30" }, "Instituto Exemplo", raw, "Cebraspe").includes("prova_data:UNSUPPORTED_DATE"));
   assert.ok(extractionSemanticIssues({ ...valid, evidence: { vagas: "quote inventada" } }, "Instituto Exemplo", raw, "Cebraspe").includes("vagas:NON_LITERAL_EVIDENCE"));
+  const missingEvidence = extractionSemanticIssues({ ...valid, status: null, cadastro_reserva: null, state_code: null, city: null, evidence: { status: "não informado", cadastro_reserva: "não consta", state_code: "não informado", city: "não informado" } }, "Instituto Exemplo", raw, "Cebraspe");
+  for (const field of ["status", "cadastro_reserva", "state_code", "city"]) assert.ok(missingEvidence.includes(`${field}:NON_LITERAL_EVIDENCE`), "absent fields must not accept invented explanations as quotes");
   const diagnosticExpected = ExtractConcursoSchema.parse({ orgao: "INSTITUTO MUNICIPAL DE ESTUDOS APLICADOS", banca: "Cebraspe", vagas: 12, salario: 4200, status: null, cargos: ["Analista Administrativo"], escolaridade: ["SUPERIOR"], inscricao_inicio: "2026-11-02", inscricao_fim: "2026-11-20", prova_data: "2026-12-15", scope: "NACIONAL", evidence: { cargos: "Cargo: Analista Administrativo." } });
   assert.deepEqual(extractionSemanticIssues(diagnosticExpected, diagnosticExpected.orgao!, EXTRACTION_DIAGNOSTIC_TEXT, "Cebraspe"), []);
   console.log("live-pricing fail-closed, model order/fallback/budget/circuit and grounded extraction validation passed");

@@ -24,7 +24,15 @@ export const EXTRACTION_DIAGNOSTIC_TEXT = [
 export async function runExtractionDiagnostic(model: string, reasoningPolicy: "provider-default" | "disabled", provider = "openrouter") {
   const budget = new GenerationBudget(1);
   const title = "INSTITUTO MUNICIPAL DE ESTUDOS APLICADOS";
-  const semantic = (input: unknown) => { const parsed = ExtractConcursoSchema.safeParse(input); return parsed.success && extractionSemanticIssues(parsed.data, title, EXTRACTION_DIAGNOSTIC_TEXT, "Cebraspe").length === 0; };
-  const result = await generateWithFallback({ taskType: "EXTRACT_CONCURSO", promptVersion: "synthetic-grounded-extraction-diagnostic-v1", prompt: EXTRACT_CONCURSO_PROMPT, input: { title, sourceName: "Cebraspe", snippet: EXTRACTION_DIAGNOSTIC_TEXT }, schema: closeSchemaObjects(z.toJSONSchema(ExtractConcursoSchema, { io: "input" })), reasoningPolicy }, { budget, validate: (input) => ExtractConcursoSchema.safeParse(input).success, semanticValidate: semantic }, smokeDependencies(provider, model));
-  return { ok: result.ok, fixture: "synthetic-extraction", reasoningPolicy, requestedModel: model, effectiveModel: result.effectiveModel || "MODEL_EFFECTIVE_UNKNOWN", httpStatus: result.httpStatus ?? null, latencyMs: result.latencyMs, bodyPresent: result.bodyPresent ?? false, parseSuccess: result.parseSuccess ?? false, schemaSuccess: ExtractConcursoSchema.safeParse(result.data).success, semanticSuccess: result.ok && semantic(result.data), generationDiagnostics: result.generationDiagnostics ?? null, physicalCalls: budget.calls, errorCode: result.errorCode ?? null, rateLimit: result.rateLimit ?? null, upstreamError: result.upstreamError ?? null };
+  let semanticIssues: string[] = [];
+  const semantic = (input: unknown) => {
+    const parsed = ExtractConcursoSchema.safeParse(input);
+    if (!parsed.success) return false;
+    semanticIssues = extractionSemanticIssues(parsed.data, title, EXTRACTION_DIAGNOSTIC_TEXT, "Cebraspe");
+    return semanticIssues.length === 0;
+  };
+  const result = await generateWithFallback({ taskType: "EXTRACT_CONCURSO", promptVersion: "synthetic-grounded-extraction-diagnostic-v2", prompt: EXTRACT_CONCURSO_PROMPT, input: { title, sourceName: "Cebraspe", snippet: EXTRACTION_DIAGNOSTIC_TEXT }, schema: closeSchemaObjects(z.toJSONSchema(ExtractConcursoSchema, { io: "input" })), reasoningPolicy }, { budget, validate: (input) => ExtractConcursoSchema.safeParse(input).success, semanticValidate: semantic }, smokeDependencies(provider, model));
+  const parsed = ExtractConcursoSchema.safeParse(result.data);
+  const schemaIssues = parsed.success ? [] : parsed.error.issues.map((issue) => ({ path: issue.path.join("."), code: issue.code }));
+  return { ok: result.ok, fixture: "synthetic-extraction", reasoningPolicy, requestedModel: model, effectiveModel: result.effectiveModel || "MODEL_EFFECTIVE_UNKNOWN", httpStatus: result.httpStatus ?? null, latencyMs: result.latencyMs, bodyPresent: result.bodyPresent ?? false, parseSuccess: result.parseSuccess ?? false, schemaSuccess: parsed.success, schemaIssues, semanticSuccess: result.ok && semantic(result.data), semanticIssues, generationDiagnostics: result.generationDiagnostics ?? null, physicalCalls: budget.calls, errorCode: result.errorCode ?? null, rateLimit: result.rateLimit ?? null, upstreamError: result.upstreamError ?? null };
 }

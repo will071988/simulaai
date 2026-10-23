@@ -28,7 +28,7 @@ async function main() {
     const session = await auth.auth.verifyOtp({ type: "magiclink", token_hash: link.data.properties.hashed_token }); assert.equal(session.error, null); assert.ok(session.data.session); signedIn = true;
     browser = await chromium.launch({ executablePath: process.env.BROWSER_EXECUTABLE_PATH || "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe", headless: true });
     const page = await browser.newPage(); await page.goto("https://simulaai-kappa.vercel.app/", { waitUntil: "domcontentloaded" }); await page.getByRole("heading", { name: "Conteúdo disponível para treinar" }).waitFor({ timeout: 60000 });
-    const model = "nvidia/nemotron-3-super-120b-a12b:free";
+    const model = process.env.AI_OPENROUTER_MODEL || "nvidia/nemotron-3-super-120b-a12b:free";
     const results = [];
     for (const policy of ["provider-default", "disabled"]) {
       const result = await page.evaluate(async ({ model, policy, token }) => {
