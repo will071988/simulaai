@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { createCollectorDatabase } from "./support/collectorDatabase";
 import { syncConcursoFromDocument } from "../src/lib/collector/syncConcurso";
+import { readFileSync } from "node:fs";
 
 async function main() {
   const { db, svc } = await createCollectorDatabase();
@@ -79,6 +80,28 @@ async function main() {
     await assert.rejects(syncConcursoFromDocument(svc, { ...inputs[1], rawText: "Retificação Edital 01/2026: 130 vagas", publishedAt: "2026-03-01T00:00:00Z" }, extracted, 1), /ATOMIC_PERSISTENCE/);
     assert.deepEqual(await snapshot(), beforeFailure);
     assert.equal((await db.query<{ vagas: number }>("select vagas from concursos where id = $1", [original.concursoId])).rows[0].vagas, 120);
+    await db.exec("alter table concurso_field_evidence drop constraint fixture_reject_evidence");
+    // CDN evidence remains tied to Cebraspe's registered source, exact host,
+    // HTTPS contest path and tier. Similar hosts or other sources must fail.
+    const cebraspe = (await db.query<{ id: string }>("select id from collector_sources where name='Cebraspe'")).rows[0];
+    const cdnText = "Tribunal de Exemplo. Cebraspe. São 10 vagas.";
+    async function cdnDocument(url: string, sourceId = cebraspe.id) {
+      const doc = await db.query<{ id: string }>("insert into collector_documents(source_id,canonical_url,source_url,title,raw_text,content_hash,status) values($1,$2,$2,'Tribunal de Exemplo Edital 10/2026',$3,md5($3),'PARSED') returning id", [sourceId, url, cdnText]);
+      return { title: "Tribunal de Exemplo Edital 10/2026", rawText: cdnText, canonicalUrl: url, sourceName: "Cebraspe", documentId: doc.rows[0].id };
+    }
+    const cdn = await cdnDocument("https://cdn.cebraspe.org.br/concursos/EXEMPLO_26/arquivos/edital.pdf");
+    const cdnExtracted = { orgao: "Tribunal de Exemplo", banca: "Cebraspe", vagas: null, status: null };
+    assert.ok((await syncConcursoFromDocument(svc, cdn, cdnExtracted, 1))?.concursoId);
+    await db.exec(readFileSync("../supabase/migrations/20261023170000_allow_cebraspe_official_cdn_evidence.sql", "utf8"));
+    for (const url of ["https://cdn.cebraspe.org.br.evil.example/concursos/x.pdf", "http://cdn.cebraspe.org.br/concursos/x.pdf", "https://cdn.cebraspe.org.br/not-contests/x.pdf"]) {
+      const invalid = await cdnDocument(url);
+      await assert.rejects(syncConcursoFromDocument(svc, invalid, cdnExtracted, 1), /EVIDENCE_TIER_MISMATCH/);
+    }
+    const wrongSource = await cdnDocument("https://cdn.cebraspe.org.br/concursos/EXEMPLO_26/arquivos/wrong-source.pdf", source.id);
+    await assert.rejects(syncConcursoFromDocument(svc, wrongSource, cdnExtracted, 1), /EVIDENCE_TIER_MISMATCH/);
+    await db.query("update collector_sources set tier=2 where id=$1", [cebraspe.id]);
+    const wrongTier = await cdnDocument("https://cdn.cebraspe.org.br/concursos/EXEMPLO_26/arquivos/wrong-tier.pdf");
+    await assert.rejects(syncConcursoFromDocument(svc, wrongTier, cdnExtracted, 1), /EVIDENCE_TIER_MISMATCH/);
     console.log(JSON.stringify({ database: "PostgreSQL/PGlite isolated", execution1: first, execution2: second, rollback: "passed", staleVersion: "rejected", logicalKeyCollision: "requires identity re-resolution", pendingDuplicate: "blocked", externalSource: "rejected" }));
   } finally { await db.close(); }
 }
