@@ -1,4 +1,5 @@
 import type { ExtractConcurso } from "./schemas";
+import { BRAZILIAN_STATE_CODES } from "./schemas";
 import { enrichDocument } from "./enrichment";
 import { isSchoolingCategory } from "../contest-role";
 import { normalizeContestStatus } from "./contestStatus";
@@ -11,7 +12,18 @@ export function extractionSemanticIssues(value: ExtractConcurso, title: string, 
   const evidence = value.evidence || {};
   const deterministic = enrichDocument(title, rawText);
   const quote = (field: keyof typeof evidence) => evidence[field]?.trim() || "";
-  const literal = (field: keyof typeof evidence) => quote(field).length >= 3 && rawText.toLowerCase().includes(quote(field).toLowerCase());
+  // PDF line wrapping is formatting, not different evidence. Preserve accents,
+  // words and punctuation; normalize only whitespace and case for comparison.
+  const literalText = (text: string) => text.toLowerCase().replace(/\s+/g, " ").trim();
+  const literal = (field: keyof typeof evidence) => {
+    const text = quote(field);
+    if (field === "state_code" && text.length === 2 && BRAZILIAN_STATE_CODES.some((code) => code === text.toUpperCase()) && value.state_code === text.toUpperCase()) {
+      // A two-letter UF is complete evidence only when explicitly present as
+      // an uppercase token (e.g. SEPLAG/AL), not inside a word such as ALAGOAS.
+      return new RegExp(`(?:^|[^\\p{L}\\p{N}])${text.toUpperCase()}(?=$|[^\\p{L}\\p{N}])`, "u").test(rawText);
+    }
+    return text.length >= 3 && literalText(rawText).includes(literalText(text));
+  };
   for (const field of Object.keys(evidence) as Array<keyof typeof evidence>) if (quote(field) && !literal(field)) issues.push(`${field}:NON_LITERAL_EVIDENCE`);
   if (!value.orgao || /^(orgao|desconhecido|nao informado)$/i.test(fold(value.orgao)) || !source.includes(fold(value.orgao))) issues.push("orgao:UNSUPPORTED_IDENTITY");
   if (!value.banca || (!source.includes(fold(value.banca)) && fold(value.banca) !== fold(sourceName || ""))) issues.push("banca:UNSUPPORTED_IDENTITY");

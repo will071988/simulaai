@@ -53,7 +53,16 @@ export async function openAICompletion<T>(provider: string, model: string, endpo
         response_format: req.schema ? { type: "json_schema", json_schema: { name: "structured_result", strict: provider === "cerebras", schema: req.schema } } : { type: "json_object" } }),
     }, permit);
     httpStatus = response.status;
-    if (!response.ok) { await response.body?.cancel(); return { ...common, httpStatus: response.status, latencyMs: Date.now() - start, errorCode: httpError(response.status) }; }
+    if (!response.ok) {
+      // Groq reports model-generated invalid JSON as HTTP 400. This is a
+      // generation failure, not an invalid caller input, and may use fallback.
+      // Never return its message or failed_generation (which contains raw text).
+      if (provider === "groq" && response.status === 400) {
+        const error = await response.json().catch(() => null) as { error?: { code?: unknown } } | null;
+        if (error?.error?.code === "json_validate_failed") return { ...common, httpStatus: response.status, latencyMs: Date.now() - start, errorCode: "INVALID_JSON", jsonClassification: "UPSTREAM_JSON_VALIDATION_FAILED", parseSuccess: false };
+      } else await response.body?.cancel();
+      return { ...common, httpStatus: response.status, latencyMs: Date.now() - start, errorCode: httpError(response.status) };
+    }
     const json = await response.json() as { model?: string; error?: unknown; choices?: Array<{ message?: { content?: string } }> };
     if (json.error) return { ...common, httpStatus: response.status, latencyMs: Date.now() - start, errorCode: "PROVIDER_UNAVAILABLE" };
     return parsedResult<T>(provider, model, typeof json.choices?.[0]?.message?.content === "string" ? json.choices[0].message!.content! : "", typeof json.model === "string" ? json.model : common.effectiveModel, start, response.status);

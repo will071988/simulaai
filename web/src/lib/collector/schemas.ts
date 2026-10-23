@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+export const BRAZILIAN_STATE_CODES = ["AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS", "MG", "PA", "PB", "PR", "PE", "PI", "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO"] as const;
+
 export const ExtractConcursoSchema = z.object({
   orgao: z.string().nullable().transform((v) => (v ? v.slice(0, 100) : null)),
   banca: z.string().nullable().transform((v) => (v ? v.slice(0, 50) : null)),
@@ -12,7 +14,7 @@ export const ExtractConcursoSchema = z.object({
   cargos: z.array(z.string()).optional(),
   escolaridade: z.array(z.enum(["FUNDAMENTAL", "MEDIO", "TECNICO", "SUPERIOR"])).optional(),
   scope: z.enum(["NACIONAL", "ESTADUAL", "MUNICIPAL", "REGIONAL"]).nullable().optional(),
-  state_code: z.string().length(2).nullable().optional(),
+  state_code: z.enum(BRAZILIAN_STATE_CODES).nullable().optional(),
   city: z.string().nullable().optional(),
   status: z.string().nullable().transform((v) => (v ? v.slice(0, 30) : null)),
   evidence: z

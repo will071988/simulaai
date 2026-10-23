@@ -12,13 +12,10 @@ async function handleGET(_request: Request) {
   void _request;
   try {
     const { questions, contests } = await loadPublishedQuestionPool();
-    const contestMap = new Map(contests.map((contest) => [contest.id, contest]));
+    const options = publishedQuestionOptions({ questions, contests });
     const values = (key: "cargo" | "disciplina" | "assunto" | "dificuldade") =>
       [...new Set(questions.flatMap((question) => question[key] ? [String(question[key])] : []))].sort((a, b) => a.localeCompare(b, "pt-BR"));
-    const bancas = [...new Set(questions.flatMap((question) => {
-      const banca = question.banca || (question.concurso_id ? contestMap.get(question.concurso_id)?.banca : null);
-      return banca ? [banca] : [];
-    }))].sort((a, b) => a.localeCompare(b, "pt-BR"));
+    const bancas = [...new Set(options.flatMap((question) => question.banca ? [question.banca] : []))].sort((a, b) => a.localeCompare(b, "pt-BR"));
     const niveis = [...new Set(questions.flatMap((question) => question.nivel ? [question.nivel] : []))].sort((a, b) => a.localeCompare(b, "pt-BR"));
     return NextResponse.json({ data: { concursos: contests.map((contest) => ({ ...contest, questionCount: questions.filter((q) => q.concurso_id === contest.id).length })), cargos: values("cargo"), disciplinas: values("disciplina"), assuntos: values("assunto"), bancas, niveis, dificuldades: values("dificuldade"), questions: publishedQuestionOptions({ questions, contests }), totalQuestions: questions.length } }, { headers: { "Cache-Control": "no-store" } });
   } catch {
@@ -36,14 +33,7 @@ async function handlePOST(request: Request) {
     const input = { ...parsed.data, seed: parsed.data.seed || randomBytes(16).toString("hex") };
     const { questions, contests } = await loadPublishedQuestionPool();
     const contestMap = new Map(contests.map((contest) => [contest.id, contest]));
-    const candidates: QuestionCandidate[] = questions.map((question) => {
-      const contest = question.concurso_id ? contestMap.get(question.concurso_id) : undefined;
-      return {
-        id: question.id, concursoId: question.concurso_id, cargo: question.cargo, disciplina: question.disciplina,
-        assunto: question.assunto, banca: question.banca || contest?.banca || null, nivel: question.nivel,
-        dificuldade: question.dificuldade,
-      };
-    });
+    const candidates: QuestionCandidate[] = publishedQuestionOptions({ questions, contests });
     let selected: QuestionCandidate[];
     try { selected = selectQuestions(candidates, input); }
     catch (error) {

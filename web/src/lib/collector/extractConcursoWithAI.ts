@@ -13,10 +13,12 @@ export const EXTRACT_CONCURSO_PROMPT = [
   "vagas e cadastro_reserva são números inteiros ou null, nunca booleanos. salario é número ou null, sem R$ ou separadores de milhar.",
   "Use datas ISO YYYY-MM-DD apenas quando explícitas. Não suponha vagas zero para cadastro de reserva.",
   "escolaridade é uma lista de FUNDAMENTAL, MEDIO, TECNICO ou SUPERIOR. scope é NACIONAL, ESTADUAL, MUNICIPAL, REGIONAL ou null. state_code é uma UF de duas letras ou null.",
+  "Só preencha state_code se a sigla estiver explicitamente no trecho; nunca converta o nome do estado em sigla por conhecimento externo. Use null em caso de dúvida.",
   "Use status null quando não houver declaração literal do status. Não invente fatos, localização ou valores ausentes.",
   "evidence é um objeto contendo apenas citações literais curtas do texto, até 120 caracteres por campo. Cada chave deve ser o nome do campo correspondente.",
+  "Nas citações, quebras de linha e espaços repetidos de PDF podem virar espaços simples, mas preserve todas as palavras, acentos e pontuação. Não junte trechos separados por outras palavras.",
   "OMITA de evidence todos os campos ausentes ou null. Nunca escreva justificativas como 'não informado', 'não consta', null ou paráfrases em evidence. Use {} se não houver citações.",
-  "Prompt v5 grounded, com tipos explícitos e evidências ausentes omitidas.",
+  "Prompt v6 grounded, com tipos explícitos, UF não inferida e evidências literais de PDF.",
 ].join(" ");
 
 export async function extractConcursoWithAI(title: string, rawText: string, budget?: GenerationBudget, sourceName?: string) {
@@ -24,7 +26,7 @@ export async function extractConcursoWithAI(title: string, rawText: string, budg
     taskType: "EXTRACT_CONCURSO",
     prompt: EXTRACT_CONCURSO_PROMPT,
     input: { title, sourceName, snippet: rawText.slice(0, 4000) },
-    promptVersion: "extract_concurso_v5_grounded",
+    promptVersion: "extract_concurso_v6_grounded",
     schema: closeSchemaObjects(z.toJSONSchema(ExtractConcursoSchema, { io: "input" })),
     reasoningPolicy: process.env.AI_EXTRACT_REASONING_POLICY === "disabled" ? "disabled" : "provider-default",
   }, { validate: (data) => ExtractConcursoSchema.safeParse(data).success, semanticValidate: (data) => {

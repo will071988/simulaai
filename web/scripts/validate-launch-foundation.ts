@@ -6,6 +6,7 @@ import { loadPublishedQuestionPool, publishedQuestionOptions } from "../src/lib/
 import { matchesQuestionFilters } from "../src/lib/simulados/filters";
 import { createQuestionBankFixture } from "./support/questionBankFixture";
 import { loadPublicPracticeCatalog } from "../src/lib/simulados/practice-catalog";
+import { macaePracticeBank, verifyMacaeQuestion, publishMacaePracticeBank, MACAE_CONTEST_ID, MACAE_PROGRAMME_URL } from "../src/lib/questions/macae-practice-bank";
 
 async function main() {
   const bank = starterBank();
@@ -47,6 +48,22 @@ async function main() {
     const row = (await db.query<{ id: string }>("select id from questoes where validated_by like 'starter:%' limit 1")).rows[0];
     await db.query("update questoes set explicacao='Alteração editorial externa que deve ser preservada pelo publicador de conteúdo.' where id=$1", [row.id]);
     await assert.rejects(publishStarterBank(service, "11111111-1111-4111-8111-111111111111"), /STARTER_EXISTING_CONTENT_MISMATCH/);
+    const thematic = macaePracticeBank();
+    assert.equal(thematic.length, 30);
+    assert.ok(thematic.every((item) => item.question.sourceUrl === MACAE_PROGRAMME_URL && item.question.banca === null));
+    assert.ok(thematic.every((item) => !bank.some((general) => general.fingerprint === item.fingerprint)), "thematic bank must not duplicate the general bank");
+    const badProof = structuredClone(thematic[0]); badProof.proof.a++;
+    assert.throws(() => verifyMacaeQuestion(badProof), /MACAE_PROOF_FAILED/);
+    await assert.rejects(publishMacaePracticeBank(service, "11111111-1111-4111-8111-111111111111"), /MACAE_PUBLIC_CONTEST_REQUIRED/);
+    await db.query("insert into concursos(id,orgao,titulo,banca,quality_status,is_publishable) values($1,'Prefeitura de Macaé','Concurso Público para a Prefeitura de Macaé','FGV','VERIFIED',true)", [MACAE_CONTEST_ID]);
+    const released = await publishMacaePracticeBank(service, "11111111-1111-4111-8111-111111111111");
+    assert.equal(released.publishedQuestions, 30); assert.equal(released.insertedQuestions, 30);
+    assert.equal((await publishMacaePracticeBank(service, "11111111-1111-4111-8111-111111111111")).insertedQuestions, 0);
+    const expandedPool = await loadPublishedQuestionPool(service);
+    const thematicOptions = publishedQuestionOptions(expandedPool).filter((option) => option.concursoId === MACAE_CONTEST_ID);
+    assert.equal(thematicOptions.length, 30); assert.ok(thematicOptions.every((option) => option.banca === null), "AI exercises must not inherit official bank attribution");
+    const links = await db.query<{ count: number }>("select count(*)::int as count from question_explanations qe join questoes q on q.id=qe.questao_id where q.concurso_id=$1", [MACAE_CONTEST_ID]);
+    assert.equal(links.rows[0].count, 30);
     for (const file of ["src/app/page.tsx", "src/app/simulados/page.tsx", "src/app/simulados/[slug]/page.tsx"]) assert.doesNotMatch(readFileSync(file, "utf8"), /@\/lib\/mock|ranking mock|getSimulado/);
     console.log("launch foundation: exact proofs, real PostgreSQL quality gates, public-only general pool, idempotent publication, scoring and comments passed");
   } finally { await db.exec("set role postgres").catch(() => undefined); await db.close(); }

@@ -36,7 +36,7 @@ const labels: Record<string, string> = {
   freeAiGuard: "Proteção FREE_AI_ONLY ativa",
   publishedQuestionBank: "Banco real com pelo menos 30 questões elegíveis",
   trustedExplanations: "Comentários validados para todo o banco elegível",
-  contestQuestionCoverage: "Ao menos um concurso com prova de 30 questões disponível",
+  contestQuestionCoverage: "Ao menos um concurso com simulado temático de 30 questões disponível",
   aiCredentialValid: "Credencial OpenRouter validada sem chamada de geração",
   freeExtractionModelsAvailable: "Modelos de extração disponíveis com preço zero no catálogo live",
 };
@@ -103,7 +103,7 @@ export default function ReleaseReadinessPage() {
         <p>Host público: {data.snapshot.siteUrlHost || "não configurado"}</p>
         <p>Questões elegíveis: {data.snapshot.publishedQuestions}</p>
         <p>Comentários validados: {data.snapshot.trustedExplanationCount}</p>
-        <p>Concursos com prova completa: {data.snapshot.contestsWithFullExam}</p>
+        <p>Concursos com simulado de 30 questões: {data.snapshot.contestsWithFullExam}</p>
         <p>Autenticação OpenRouter: {data.snapshot.aiCredentialHttpStatus || "indisponível"}</p>
         <p>Modelos de extração: {data.snapshot.extractionModels?.join(", ") || "não configurados"}</p>
         <h3 className="mt-4 font-semibold">Provedores de IA — configuração</h3>

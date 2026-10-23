@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-: "${SUPABASE_DB_URL:?SUPABASE_DB_URL is required}"
 : "${BACKUP_ENCRYPTION_KEY:?BACKUP_ENCRYPTION_KEY is required}"
+case "${BACKUP_SOURCE:-url}" in
+  url) : "${SUPABASE_DB_URL:?SUPABASE_DB_URL is required}"; SOURCE_ARGS=(--db-url "$SUPABASE_DB_URL") ;;
+  linked) SOURCE_ARGS=(--linked) ;;
+  *) echo "BACKUP_SOURCE must be url or linked." >&2; exit 1 ;;
+esac
 
 for cmd in supabase openssl tar sha256sum; do
   command -v "$cmd" >/dev/null 2>&1 || { echo "Missing required command: $cmd" >&2; exit 1; }
@@ -27,11 +31,11 @@ dump_to() {
     # Its stdout contains connection credentials: pipe directly, never log it.
     # Windows PostgreSQL requires the full option spelling (Linux accepts the
     # CLI recipe's abbreviated --quote-all-identifier).
-    supabase db dump --db-url "$SUPABASE_DB_URL" --dry-run "$@" \
+    supabase db dump "${SOURCE_ARGS[@]}" --dry-run "$@" \
       | sed -E 's/^([[:space:]]*)--quote-all-identifier([[:space:]])/\1--quote-all-identifiers\2/' \
       | bash > "$output"
   else
-    supabase db dump --db-url "$SUPABASE_DB_URL" -f "$output" "$@"
+    supabase db dump "${SOURCE_ARGS[@]}" -f "$output" "$@"
   fi
 }
 

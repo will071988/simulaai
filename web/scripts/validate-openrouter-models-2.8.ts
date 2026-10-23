@@ -105,6 +105,13 @@ async function main() {
   const raw = "Instituto Exemplo. Cargo: Analista Administrativo. Escolaridade: nível superior. São 10 vagas. Inscrições de 01/10/2026 até 20/10/2026.";
   const valid = ExtractConcursoSchema.parse({ orgao: "Instituto Exemplo", banca: "Cebraspe", vagas: 10, status: null, cargos: ["Analista Administrativo"], escolaridade: ["SUPERIOR"], evidence: { vagas: "São 10 vagas", cargos: "Cargo: Analista Administrativo" } });
   assert.deepEqual(extractionSemanticIssues(valid, "Instituto Exemplo", raw, "Cebraspe"), []);
+  const wrappedRaw = raw.replace("Cargo: Analista Administrativo", "Cargo: Analista\nAdministrativo");
+  assert.deepEqual(extractionSemanticIssues(valid, "Instituto Exemplo", wrappedRaw, "Cebraspe"), [], "PDF line wraps must not invalidate otherwise exact quotations");
+  assert.ok(extractionSemanticIssues({ ...valid, evidence: { cargos: "Cargo - Analista Administrativo" } }, "Instituto Exemplo", wrappedRaw, "Cebraspe").includes("cargos:NON_LITERAL_EVIDENCE"), "whitespace normalization must not admit changed wording or punctuation");
+  const explicitUf = { ...valid, state_code: "AL" as const, evidence: { ...valid.evidence, state_code: "AL" } };
+  assert.deepEqual(extractionSemanticIssues(explicitUf, "Instituto Exemplo", `${raw} Local: SEPLAG/AL.`, "Cebraspe"), []);
+  assert.ok(extractionSemanticIssues(explicitUf, "Instituto Exemplo", `${raw} Estado de ALAGOAS.`, "Cebraspe").includes("state_code:NON_LITERAL_EVIDENCE"), "UF must not be inferred from a state name or matched inside a word");
+  assert.equal(ExtractConcursoSchema.safeParse({ ...valid, state_code: "ZZ" }).success, false);
   assert.ok(extractionSemanticIssues({ ...valid, vagas: 999 }, "Instituto Exemplo", raw, "Cebraspe").includes("vagas:UNSUPPORTED_NUMBER"));
   assert.ok(extractionSemanticIssues({ ...valid, orgao: "Instituição inventada" }, "Instituto Exemplo", raw, "Cebraspe").includes("orgao:UNSUPPORTED_IDENTITY"));
   assert.ok(extractionSemanticIssues({ ...valid, prova_data: "2026-02-30" }, "Instituto Exemplo", raw, "Cebraspe").includes("prova_data:UNSUPPORTED_DATE"));

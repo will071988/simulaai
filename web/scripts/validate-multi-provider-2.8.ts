@@ -136,6 +136,14 @@ async function main() {
       assert.equal(empty.errorCode, "EMPTY_BODY"); assert.equal(empty.bodyPresent, false);
       globalThis.fetch = async () => new Response(null, { status: 401 });
       assert.equal((await provider.generateStructured(request, async () => true)).errorCode, "AUTH_CONFIGURATION_ERROR");
+      if (provider.name === "groq") {
+        globalThis.fetch = async () => Response.json({ error: { code: "json_validate_failed", message: "private upstream message", failed_generation: "private generated draft" } }, { status: 400 });
+        const rejectedJson = await provider.generateStructured(request, async () => true);
+        assert.equal(rejectedJson.errorCode, "INVALID_JSON"); assert.equal(rejectedJson.jsonClassification, "UPSTREAM_JSON_VALIDATION_FAILED");
+        assert.doesNotMatch(JSON.stringify(rejectedJson), /private upstream|private generated/);
+        globalThis.fetch = async () => Response.json({ error: { code: "unsupported_parameter" } }, { status: 400 });
+        assert.equal((await provider.generateStructured(request, async () => true)).errorCode, "INVALID_INPUT", "real input/configuration errors must still stop fallback");
+      }
     }
   } finally { globalThis.fetch = originalFetch; for (const name of names) { if (previous[name] === undefined) delete process.env[name]; else process.env[name] = previous[name]; } }
   console.log("multi-provider order, availability, fallback, semantic stop, physical budgets, execution circuit and schema tests passed");

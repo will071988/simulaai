@@ -26,8 +26,8 @@ export async function loadPublishedQuestionPool(service = supabaseService(), sig
   return { questions: questions.filter((question) => !question.concurso_id || publicContestIds.has(question.concurso_id)), contests };
 }
 
-export function publishedQuestionOptions(pool: PublishedPool): QuestionOption[] {
+export function publishedQuestionOptions(pool: PublishedPool): Array<QuestionOption & { dificuldade: PublishedQuestion["dificuldade"] }> {
   const contests = new Map(pool.contests.map((contest) => [contest.id, contest]));
   return pool.questions.map((question) => ({ id: question.id, concursoId: question.concurso_id, cargo: question.cargo,
-    disciplina: question.disciplina, assunto: question.assunto, banca: question.banca || (question.concurso_id ? contests.get(question.concurso_id)?.banca || null : null), nivel: question.nivel, dificuldade: question.dificuldade }));
+    disciplina: question.disciplina, assunto: question.assunto, banca: question.banca || (question.origem === "QUESTAO_OFICIAL" && question.concurso_id ? contests.get(question.concurso_id)?.banca || null : null), nivel: question.nivel, dificuldade: question.dificuldade }));
 }

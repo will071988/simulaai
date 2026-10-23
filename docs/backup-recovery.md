@@ -43,6 +43,13 @@ bash ops/backup-supabase.sh
 
 O diretório `backups/` deve permanecer fora do Git.
 
+Também é possível usar o vínculo autenticado do CLI, sem gravar uma connection
+string no `.env`: `BACKUP_SOURCE=linked`. Executar a partir da raiz do projeto e
+conferir antes que `supabase/.temp/project-ref` corresponde ao projeto autorizado
+`ukwulespvvthyjqgrjfo`. O padrão continua sendo `BACKUP_SOURCE=url`, com
+`SUPABASE_DB_URL` obrigatório. O modo linked utiliza as credenciais temporárias
+obtidas pelo CLI; sua receita de dump deve permanecer fora dos logs.
+
 ### Ferramentas locais no Windows (sem Docker)
 
 Executar em **Windows PowerShell 5.1**, na raiz do repositório.
@@ -109,6 +116,26 @@ fixtures. O restore completo do Supabase exige um alvo descartável compatível
 com seus schemas internos, roles e extensões; não remover dependências do dump
 para forçar aprovação. O banco é compartilhado: o backup lógico pode incluir
 dados de outros módulos. O runbook não cobre objetos do Storage.
+
+### Evidência de backup real — 23/10/2026
+
+Foi executado backup lógico real do projeto autorizado com `BACKUP_SOURCE=linked`
+e ferramentas nativas Windows. Artefato local, fora do Git:
+
+`C:\Seu concurso\local-tools\production-backups\simulaai-db-20261023T144525Z.tar.gz.enc`
+
+O arquivo `.sha256` correspondente passou na verificação. A descriptografia
+também passou, e o arquivo contém `roles.sql`, `schema.sql`, `data.sql` e
+`manifest.txt`. Nenhum segredo foi impresso. A chave aleatória foi conservada
+em `backup-key.dpapi`, no mesmo diretório, protegida pelo Windows DPAPI para o
+usuário atual. Esse cofre local não substitui uma cópia da chave em cofre externo
+nem uma cópia do backup fora da máquina.
+
+O dump informou dependências circulares, inclusive em tabelas de outros módulos;
+a receita de dados do Supabase usa `session_replication_role = replica`. O banco
+compartilhado tem a extensão `supabase_vault`, além de componentes gerenciados do
+Supabase. O restore completo precisa de alvo descartável compatível. **Até aqui
+foi comprovado backup + checksum + decrypt do banco real, não o restore completo.**
 
 ## Testar restauração
 

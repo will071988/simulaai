@@ -192,10 +192,11 @@ export async function runCollector(externalRunId?: string): Promise<{ runId: str
         const identity = deterministicIdentity(identityTitle, doc.sourceName);
         const facts = enrichDocument(identityTitle, raw);
         const deterministicExtracted = { orgao: identity.orgao, banca: identity.banca, vagas: facts.vagas, salario: facts.salario, inscricao_inicio: facts.inscricao_inicio, inscricao_fim: facts.inscricao_fim, prova_data: facts.prova_data, cadastro_reserva: facts.cadastro_reserva, cargos: facts.cargos, escolaridade: facts.escolaridade as ("FUNDAMENTAL" | "MEDIO" | "TECNICO" | "SUPERIOR")[], scope: facts.scope as "NACIONAL" | "ESTADUAL" | "MUNICIPAL" | "REGIONAL" | null, state_code: facts.state_code, city: facts.city, status: null, evidence: {} };
-        const deterministicReady = Boolean(identity.orgao && identity.banca);
+        const deterministicParsed = ExtractConcursoSchema.safeParse(deterministicExtracted);
+        const deterministicReady = Boolean(identity.orgao && identity.banca && deterministicParsed.success);
         const needsAI = !deterministicReady || facts.evidence.length < 2;
         let status = deterministicReady ? "PROCESSED" : "AI_PENDING";
-        let extracted: ExtractConcurso | null = deterministicReady ? deterministicExtracted : null;
+        let extracted: ExtractConcurso | null = deterministicReady && deterministicParsed.success ? deterministicParsed.data : null;
         const extractStarted = Date.now();
         if (needsAI && metrics.ai_requests < MAX_AI_PER_RUN) {
           const aiRes = await extractConcursoWithAI(doc.identityTitle || doc.title, raw, generationBudget, doc.sourceName);
