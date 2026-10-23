@@ -43,6 +43,73 @@ bash ops/backup-supabase.sh
 
 O diretório `backups/` deve permanecer fora do Git.
 
+### Ferramentas locais no Windows (sem Docker)
+
+Executar em **Windows PowerShell 5.1**, na raiz do repositório.
+
+Requisitos: Git for Windows, Supabase CLI autenticado e binários PostgreSQL da
+mesma versão principal do servidor (ou mais novos). O modo padrão do backup
+continua usando Docker. O modo `BACKUP_DUMP_MODE=native` executa, via Git Bash,
+a receita emitida pelo `supabase db dump --dry-run` com `pg_dump` e `pg_dumpall`
+locais, preservando os filtros do CLI. A receita contém credenciais e deve ir
+diretamente para o Bash, nunca para logs. Não habilitar `set -x`.
+
+Preparação realizada em 23/10/2026 nesta máquina:
+
+- servidor remoto: PostgreSQL **17.6**, conferido por consulta de metadados;
+- binários portáteis **17.11**, obtidos da [página oficial da EDB](https://www.enterprisedb.com/download-postgresql-binaries), em `C:\Seu concurso\local-tools\pgsql\bin`;
+- Git for Windows fornece Bash, OpenSSL, `tar` e `sha256sum`;
+- não há serviço PostgreSQL instalado por este procedimento;
+- teste com dois bancos locais sintéticos: backup AES/PBKDF2, checksum,
+  descriptografia e restauração aprovados, com duas linhas e UTF-8 idênticos;
+  o servidor descartável é encerrado ao final. Isso **não** comprova restauração
+  do banco real do Supabase.
+
+Ativar ferramentas apenas para a sessão atual:
+
+```powershell
+. .\ops\windows-backup-env.ps1
+# Em outra máquina, informar -PostgreSqlBin 'C:\caminho\pgsql\bin'.
+```
+
+Repetir o teste sintético (porta local `55439`; falha se estiver ocupada):
+
+```powershell
+$env:BACKUP_SMOKE_ROOT = 'C:/Seu concurso/local-tools'
+bash ./ops/smoke-native-backup.sh
+if ($LASTEXITCODE -ne 0) { throw 'Falha no teste local de backup' }
+```
+
+Os diretórios `backup-smoke-*` contêm apenas fixtures e logs locais, fora do
+repositório. As chaves aleatórias do teste não são conservadas; seus arquivos
+criptografados são artefatos descartáveis, não backups operacionais.
+
+Para um **backup real**, obter a connection string direta/de sessão no Dashboard
+Supabase e conservar a chave de criptografia em cofre. Digitar ambos localmente,
+sem incluir valores no histórico de comandos ou no chat:
+
+```powershell
+$value = Read-Host 'SUPABASE_DB_URL (connection string de sessao/direta)' -AsSecureString
+$env:SUPABASE_DB_URL = [System.Net.NetworkCredential]::new('', $value).Password
+$value = Read-Host 'BACKUP_ENCRYPTION_KEY (chave conservada em cofre)' -AsSecureString
+$env:BACKUP_ENCRYPTION_KEY = [System.Net.NetworkCredential]::new('', $value).Password
+Remove-Variable value
+$env:BACKUP_OUTPUT_DIR = 'C:/Seu concurso/local-tools/backups'
+try {
+    bash ./ops/backup-supabase.sh
+    if ($LASTEXITCODE -ne 0) { throw 'Falha no backup real' }
+} finally {
+    Remove-Item Env:SUPABASE_DB_URL -ErrorAction SilentlyContinue
+    Remove-Item Env:BACKUP_ENCRYPTION_KEY -ErrorAction SilentlyContinue
+}
+```
+
+Um PostgreSQL vanilla local comprova o funcionamento das ferramentas com
+fixtures. O restore completo do Supabase exige um alvo descartável compatível
+com seus schemas internos, roles e extensões; não remover dependências do dump
+para forçar aprovação. O banco é compartilhado: o backup lógico pode incluir
+dados de outros módulos. O runbook não cobre objetos do Storage.
+
 ## Testar restauração
 
 Nunca usar a base de produção.
