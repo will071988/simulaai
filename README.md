@@ -5,6 +5,8 @@ Foco atual: treino com questões publicadas, nota calculada no servidor, coment�
 
 ## Estado do produto e lançamento
 
+Evidências operacionais e pendências atuais: [relatório de 23/10/2026](docs/launch-readiness-2026-10-23.md).
+
 - O banco geral aceita questões publicadas sem vínculo com concurso; questões de concursos não publicáveis ou mesclados continuam excluídas.
 - Home e catálogo apresentam disponibilidade real. Links antigos de trilhas demonstrativas redirecionam para o gerador; rankings e comentários fictícios não fazem parte do fluxo público.
 - A home usa cache de até 60 segundos apenas de totais e disciplinas públicos, invalidado na publicação administrativa. Geração e correção continuam consultando os gates atuais, sem cache de gabaritos ou dados pessoais.
