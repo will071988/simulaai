@@ -1,5 +1,45 @@
 # Lançamento — evidências de 23/10/2026
 
+## Atualização de 26/10/2026 — sessão administrativa integrada
+
+- Login administrativo confirmado no Chrome integrado ao OpenCode. Consultas e
+  duas execuções limitadas a um documento foram feitas usando a sessão existente,
+  sem exportar tokens ou criar sessões administrativas paralelas.
+- Primeira execução no contrato v8: 0 processados, 1 falha, 1 geração.
+  Documento `49bffe1d-9f9d-469a-9e08-0c2d31950ad8`,
+  `INVALID_SCHEMA`, `cargos:UNSUPPORTED_SOURCE_VALUE`. Fonte contém tabela com
+  cargo e qualificação separados. O nome rejeitado não foi conservado pelo
+  diagnóstico; não é possível afirmar qual transformação o modelo tentou fazer.
+- Uma ação `RETRY_DOCUMENT` independente foi registrada no painel para
+  `b085386d-38e0-4fc8-bb15-34fb80058285` às 16:46:22 UTC. Isso explica a
+  movimentação 38→37 FAILED e 9→10 AI_PENDING, não um sucesso do worker.
+- Parser de cargos corrigido: rótulos explícitos, nomes quebrados em linhas de
+  PDF, separação de QPBM, rejeição de frases procedimentais e remoção do corte
+  silencioso em oito nomes. Extrações antigas com frases procedimentais deixam
+  de ser reutilizadas. Nenhum registro histórico publicado foi apagado ou
+  automaticamente reparado. Orientação da IA para tabelas reforçada, sem aceitar
+  nomes sem prova nem remover valores solicitados para aprovar a validação.
+- Commit final de código `d450df7`, contrato `extract_concurso_v8_1_literal_roles`.
+  [CI completo aprovado](https://github.com/will071988/simulaai/actions/runs/40363583144)
+  em 2m19s. O CI anterior detectou a união indevida de rótulos adjacentes; o parser
+  foi corrigido e ganhou regressão, sem enfraquecer a asserção existente.
+  Deploy Production `READY`: `dpl_EgSL4rNvyYBHhs3uL9tFV4YiYog2`.
+- Segunda execução, após publicação: 0 processados, 1 falha, 1 geração.
+  Documento `e31ae307-3f39-49bb-9159-c89bcaab90f3`,
+  `INVALID_SCHEMA`, `orgao:UNSUPPORTED_SOURCE_VALUE`. A fonte é um comunicado de
+  upload e não informa o nome do órgão responsável pelo certame. Inferi-lo pela
+  sigla na URL não fornece a prova literal exigida. É necessário desenhar um
+  vínculo com a identidade já verificada do edital principal, preservando a
+  proveniência por documento; a rejeição não foi relaxada.
+- Snapshot após as duas execuções: 9 AI_PENDING, 38 FAILED, 26 PROCESSED,
+  4 FETCHED, claims zero, 24 reservas/24 logs e 215 evidências. Worker permanece
+  degradado; nenhum novo lote foi iniciado. Não há sucesso real comprovado do
+  worker nesta rodada.
+- Endpoint autenticado de readiness: 13/14 checks passaram, billing live falso,
+  62 questões e 62 comentários validados. Esse endpoint não comprova saúde do
+  worker, qualidade dos cargos históricos ou restore completo. Lançamento
+  comercial continua bloqueado por esses requisitos e pelo billing live.
+
 ## Atualização de 26/10/2026 — Chrome integrado e contrato v8
 
 **Lançamento comercial continua bloqueado.** As seções abaixo desta atualização
