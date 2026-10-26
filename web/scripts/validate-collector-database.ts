@@ -112,6 +112,12 @@ async function main() {
     assert.equal((await db.query<{ status: string }>("select status from concursos where id=$1", [cancelledResult!.concursoId])).rows[0].status, "CANCELADO");
     const statusEvidence = (await db.query<{ value_json: string; evidence_text: string }>("select value_json,evidence_text from concurso_field_evidence where concurso_id=$1 and field_name='status'", [cancelledResult!.concursoId])).rows;
     assert.ok(statusEvidence.some((row) => row.value_json === "CANCELADO" && row.evidence_text === "cancelamento do certame"), "cancellation must persist its own factual source evidence");
+    const nineRoles = Array.from({ length: 9 }, (_, index) => `Analista Especialidade ${String.fromCharCode(65 + index)}`);
+    const roleQuotes = nineRoles.map((role) => `CARGO: ${role}.`);
+    const roleRaw = `Instituto dos Cargos Diversos. FGV. ${roleQuotes.join(" ")}`;
+    const roleDoc = (await db.query<{ id: string }>("insert into collector_documents(source_id,canonical_url,source_url,title,raw_text,content_hash,status) values($1,'https://conhecimento.fgv.br/concursos/roles2026','https://conhecimento.fgv.br/concursos/roles2026','Instituto dos Cargos Diversos Edital 15/2026',$2,md5($2),'PARSED') returning id", [source.id, roleRaw])).rows[0];
+    const roleResult = await syncConcursoFromDocument(svc, { title: "Instituto dos Cargos Diversos Edital 15/2026", rawText: roleRaw, canonicalUrl: "https://conhecimento.fgv.br/concursos/roles2026", sourceName: "FGV", documentId: roleDoc.id }, { orgao: "Instituto dos Cargos Diversos", banca: "FGV", vagas: null, status: null, cargos: nineRoles, evidence: { cargos: roleQuotes } }, 1);
+    assert.deepEqual((await db.query<{ cargos: string[] }>("select cargos from concursos where id=$1", [roleResult!.concursoId])).rows[0].cargos, nineRoles, "complete validated AI roles must not be replaced by the deterministic eight-item prefix");
     await db.query("update collector_sources set tier=2 where id=$1", [cebraspe.id]);
     const wrongTier = await cdnDocument("https://cdn.cebraspe.org.br/concursos/EXEMPLO_26/arquivos/wrong-tier.pdf");
     await assert.rejects(syncConcursoFromDocument(svc, wrongTier, cdnExtracted, 1), /EVIDENCE_TIER_MISMATCH/);

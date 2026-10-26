@@ -99,7 +99,7 @@ export async function syncConcursoFromDocument(
     inscricao_inicio: deterministic.inscricao_inicio ?? aiValue("inscricao_inicio", extracted.inscricao_inicio),
     inscricao_fim: deterministic.inscricao_fim ?? aiValue("inscricao_fim", extracted.inscricao_fim),
     cadastro_reserva: deterministic.cadastro_reserva ?? aiValue("cadastro_reserva", extracted.cadastro_reserva),
-    cargos: deterministic.cargos.length ? deterministic.cargos : aiValue("cargos", extracted.cargos) || [],
+    cargos: aiValue("cargos", extracted.cargos)?.length ? extracted.cargos! : deterministic.cargos,
     escolaridade: deterministic.escolaridade.length ? deterministic.escolaridade : aiValue("escolaridade", extracted.escolaridade) || [],
   };
   const evidencedStatus = resolveEvidencedContestStatus({ value: extracted.status, evidence: aiEvidence.status, rawText, sourceTier: tier });

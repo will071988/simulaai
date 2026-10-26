@@ -6,7 +6,7 @@ import { extractionSemanticIssues } from "./extractionSemantics";
 import { numericEvidenceMatches, SCHOOLING_EVIDENCE_PATTERNS, type ExtractionEvidenceField } from "./extractionEvidence";
 import { CONTEST_STATUSES, findContestStatusEvidence } from "./contestStatus";
 
-export const EXTRACTION_PROMPT_VERSION = "extract_concurso_v7_2_source_refs";
+export const EXTRACTION_PROMPT_VERSION = "extract_concurso_v7_3_source_refs";
 const FIELDS = ["orgao", "banca", "vagas", "salario", "inscricao_inicio", "inscricao_fim", "prova_data", "cadastro_reserva", "cargos", "escolaridade", "scope", "state_code", "city", "status"] as const;
 const MAX_TEXT = 4000;
 const MAX_SPAN = 640;
@@ -49,12 +49,13 @@ function supportingQuotes(field: ExtractionEvidenceField, value: unknown, candid
       }
       if (start >= 0 && end >= start) {
         // Bounded, contiguous context from the source, including the field label.
-        proof = { candidate, start: Math.max(0, start - 45), end: Math.min(candidate.length, end + 45) };
+        const context = field === "cargos" ? 12 : 45;
+        proof = { candidate, start: Math.max(0, start - context), end: Math.min(candidate.length, end + context) };
         break;
       }
     }
     if (!proof) throw new Error("INVALID_EVIDENCE_REFERENCE");
-    const existing = selected.find((quote) => quote.candidate === proof!.candidate && Math.max(quote.end, proof!.end) - Math.min(quote.start, proof!.start) <= MAX_SPAN);
+    const existing = selected.find((quote) => quote.candidate === proof!.candidate && proof!.start <= quote.end + 24 && quote.start <= proof!.end + 24 && Math.max(quote.end, proof!.end) - Math.min(quote.start, proof!.start) <= MAX_SPAN);
     if (existing) { existing.start = Math.min(existing.start, proof.start); existing.end = Math.max(existing.end, proof.end); }
     else selected.push(proof);
   }
@@ -155,7 +156,10 @@ export function buildGroundedExtraction(title: string, rawText: string, sourceNa
           catch { decodingIssues.push(`${field}:UNSUPPORTED_SOURCE_VALUE`); throw new Error("INVALID_EVIDENCE_REFERENCE"); }
         }
         if (!quotes.length) continue;
-        if (quotes.length > 4 || quotes.reduce((sum, quote) => sum + quote.length, 0) > MAX_SPAN) { decodingIssues.push(`${field}:EVIDENCE_QUOTE_LIMIT`); throw new Error("INVALID_EVIDENCE_REFERENCE"); }
+        const roleCount = field === "cargos" && Array.isArray(fieldValue) ? fieldValue.length : 0;
+        const quoteLimit = roleCount ? Math.max(4, roleCount) : 4;
+        const textLimit = roleCount ? Math.min(16000, Math.max(MAX_SPAN, (fieldValue as string[]).reduce((sum, role) => sum + role.length, 0) + roleCount * 48)) : MAX_SPAN;
+        if (quotes.length > quoteLimit || quotes.reduce((sum, quote) => sum + quote.length, 0) > textLimit) { decodingIssues.push(`${field}:EVIDENCE_QUOTE_LIMIT`); throw new Error("INVALID_EVIDENCE_REFERENCE"); }
         // Distant spans stay separate quotes. Never invent a contiguous phrase.
         evidence[field] = quotes.length === 1 ? quotes[0] : quotes;
       }

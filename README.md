@@ -61,7 +61,7 @@ O client OpenRouter valida a credencial uma vez por instância da execução ant
 
 #### Correção do coletor: referências verificáveis (v7)
 
-A extração atual usa `extract_concurso_v7_2_source_refs`. Em vez de redigitar
+A extração atual usa `extract_concurso_v7_3_source_refs`. Em vez de redigitar
 citações de PDF, o modelo aponta IDs de trechos selecionados no servidor. O input
 é limitado a aproximadamente 4 mil caracteres JSON de fonte, com diversidade de
 campos: tabelas de salário não devem esconder calendários de inscrição posteriores
@@ -76,8 +76,10 @@ ou substituído para forçar aprovação. Um hash do texto completo integra a ch
 de cache, inclusive quando a alteração está fora dos trechos selecionados.
 Cargos em pontos diferentes ficam em uma
 lista de citações, sem inventar uma frase unindo trechos distantes. O formato
-canônico aceita a string legada ou até quatro citações, com limite total de 640
-caracteres por campo na nova extração. Over-citação é reduzida à prova do valor;
+canônico aceita a string legada ou até quatro citações escalares, com limite total
+de 640 caracteres por campo escalar na nova extração. Cargos têm prova por item,
+até 128 cargos/citações, com texto limitado ao tamanho dos nomes e contexto curto
+(teto de 16 mil caracteres), sem truncar listas comprovadas no source. Over-citação é reduzida à prova do valor;
 fatos não são descartados para forçar validação. `evidence_text` persiste listas
 como JSON textual auditável. Validação e sincronização usam o mesmo comparador.
 

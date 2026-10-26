@@ -57,6 +57,12 @@ const roleIds = roles.input.excerpts.filter((excerpt) => /Analista|Técnico|Legi
 const multipleRoles = roles.decode({ orgao: title, banca: "Cebraspe", vagas: null, status: null, cargos: ["Analista Administrativo", "Técnico Legislativo"], evidence: { orgao: [roles.input.excerpts[0].id], cargos: roleIds } });
 assert.ok(Array.isArray(multipleRoles.evidence?.cargos), "separate roles must keep their individual source quotes");
 assert.deepEqual(extractionSemanticIssues(multipleRoles, title, roleRaw, "Cebraspe"), []);
+const nineRoles = Array.from({ length: 9 }, (_, index) => `Analista Legislativo Especialidade ${String.fromCharCode(65 + index)}`);
+const manyRoleSource = `Instituto Exemplo. Cebraspe. ${nineRoles.map((role) => `CARGO: ${role}. ${"Contexto sem alteração dos fatos. ".repeat(25)}`).join(" ")}`;
+const manyRoles = buildGroundedExtraction(title, manyRoleSource, "Cebraspe");
+const nineDecoded = manyRoles.decode({ orgao: title, banca: "Cebraspe", vagas: null, status: null, cargos: nineRoles, evidence: { orgao: [manyRoles.input.excerpts[0].id], cargos: [] } });
+assert.deepEqual(nineDecoded.cargos, nineRoles); assert.ok(Array.isArray(nineDecoded.evidence?.cargos) && nineDecoded.evidence.cargos.length > 4);
+assert.deepEqual(extractionSemanticIssues(nineDecoded, title, manyRoleSource, "Cebraspe"), [], "a multi-role notice must preserve every source-proven role instead of failing a scalar quote-size limit");
 const forgedRole = { orgao: title, banca: "Cebraspe", vagas: null, status: null, cargos: ["Analista Administrativo"], evidence: { cargos: ["Cargo: Analista", "Departamento Administrativo"] } };
 assert.ok(extractionSemanticIssues(forgedRole, title, "Instituto Exemplo. Cargo: Analista. Uma informação separada. Departamento Administrativo.", "Cebraspe").includes("cargos:UNSUPPORTED_ROLE"));
 assert.ok(extractionSemanticIssues({ orgao: "Tribunal Superior Exemplo", banca: "Cebraspe", vagas: null, status: null, escolaridade: ["SUPERIOR"], evidence: { escolaridade: "Tribunal Superior Exemplo" } }, "Tribunal Superior Exemplo", "Tribunal Superior Exemplo. Cebraspe.", "Cebraspe").includes("escolaridade:UNSUPPORTED_LEVEL"), "institution names must not become proof of an academic qualification");

@@ -23,7 +23,7 @@ export const EXTRACT_CONCURSO_PROMPT = [
   "Use apenas trechos fornecidos. Para campos com vários cargos ou fatos, cite até quatro IDs. Trechos distantes serão mantidos como citações separadas. Não cite IDs inexistentes nem combine palavras de trechos diferentes para inventar um cargo.",
   "Cite o trecho com o rótulo do campo e o valor, não só um número isolado; por exemplo, salário precisa de contexto de remuneração, não de taxa de inscrição.",
   "OMITA de evidence campos ausentes ou null. Use {} quando não houver fatos extraídos. Não escreva justificativas ou texto livre em evidence.",
-  "Prompt v7.2 grounded por referências verificáveis da fonte.",
+  "Prompt v7.3 grounded por referências verificáveis da fonte.",
 ].join(" ");
 
 export async function extractConcursoWithAI(title: string, rawText: string, budget?: GenerationBudget, sourceName?: string): Promise<AIResult<ExtractConcurso> & { degraded?: boolean }> {
