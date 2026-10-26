@@ -103,7 +103,8 @@ async function main() {
     page.on("pageerror", (error) => failures.push(error.message));
     page.on("dialog", (dialog) => void dialog.accept());
     assert.equal((await page.goto(`${origin}/admin/operacoes`, { waitUntil: "networkidle" }))?.status(), 200);
-    await page.getByText("Saúde do coletor", { exact: true }).waitFor();
+    await page.getByText("Coleta das fontes", { exact: true }).waitFor();
+    await page.getByText("Worker de IA", { exact: true }).waitFor();
     assert.equal(await page.getByRole("button", { name: "Retry indisponível" }).isDisabled(), true);
     const unknownCard = page.locator("article").filter({ has: page.getByText("official.example", { exact: true }) });
     await unknownCard.getByLabel("URL oficial para official.example").fill("https://official.example/contest");
