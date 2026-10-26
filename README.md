@@ -61,7 +61,7 @@ O client OpenRouter valida a credencial uma vez por instância da execução ant
 
 #### Correção do coletor: referências verificáveis (v7)
 
-A extração atual usa `extract_concurso_v7_3_source_refs`. Em vez de redigitar
+A extração atual usa `extract_concurso_v8_field_scoped`. Em vez de redigitar
 citações de PDF, o modelo aponta IDs de trechos selecionados no servidor. O input
 é limitado a aproximadamente 4 mil caracteres JSON de fonte, com diversidade de
 campos: tabelas de salário não devem esconder calendários de inscrição posteriores
@@ -71,8 +71,8 @@ efetivamente enviados; referências desconhecidas e valores sem suporte são rej
 O servidor busca provas literais mínimas primeiro nos trechos citados. Se a
 referência do modelo for incompleta, o mesmo verificador determinístico de campo
 pode recuperar a prova no documento original, registrando `groundingRecoveredFields`.
-Referências inexistentes continuam rejeitadas e nenhum valor afirmado é apagado
-ou substituído para forçar aprovação. Um hash do texto completo integra a chave
+Referências inexistentes em campos solicitados continuam rejeitadas e nenhum
+valor solicitado é apagado ou substituído para forçar aprovação. Um hash do texto completo integra a chave
 de cache, inclusive quando a alteração está fora dos trechos selecionados.
 Cargos em pontos diferentes ficam em uma
 lista de citações, sem inventar uma frase unindo trechos distantes. O formato
@@ -82,6 +82,15 @@ até 128 cargos/citações, com texto limitado ao tamanho dos nomes e contexto c
 (teto de 16 mil caracteres), sem truncar listas comprovadas no source. Over-citação é reduzida à prova do valor;
 fatos não são descartados para forçar validação. `evidence_text` persiste listas
 como JSON textual auditável. Validação e sincronização usam o mesmo comparador.
+
+`fieldsToExtract` limita o contrato ao que pode ser verificado naquele documento.
+Avisos de etapa, isenção e locais de prova não são obrigados a repetir escolaridade
+ou totais de vagas não declarados em texto verificável. Esses campos não são
+solicitados; atributos extras do modelo ficam em `ai_unrequested_fields` e não
+atualizam o cadastro. Quadros tabulares sem parser de contagem seguro permanecem
+com vagas desconhecidas, não com um total inferido. Atualizações parciais preservam
+valores anteriores via resolvedor; valores de campos efetivamente solicitados
+continuam exigindo prova, e erros não são convertidos em sucesso.
 
 O cache guarda o resultado canônico decodificado, nunca IDs sem contexto. Extrações
 salvas em metadata só são reutilizadas se também passarem na semântica; dados

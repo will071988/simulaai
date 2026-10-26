@@ -7,8 +7,8 @@ import type { AIResult } from "../ai/types";
 
 export const EXTRACT_CONCURSO_PROMPT = [
   "Extraia concurso. Retorne somente um objeto JSON de dados, sem explicação nem o schema.",
-  "Campos: orgao,banca,vagas,salario,inscricao_inicio,inscricao_fim,prova_data,cadastro_reserva,cargos,escolaridade,scope,state_code,city,status,evidence.",
-  "orgao, banca, vagas e status são obrigatórios no JSON; use null quando ausentes. Use [] para listas ausentes.",
+  "Extraia SOMENTE os campos listados em fieldsToExtract, além de evidence. O contrato é específico deste documento; não inclua escolaridade, status ou números que não foram solicitados.",
+  "orgao e banca são obrigatórios. Para os demais campos solicitados, use null quando ausentes e [] para listas ausentes. Não adicione campos fora de fieldsToExtract.",
   "Copie literalmente o nome completo do órgão e dos cargos: não abrevie nem reformule. Não confunda escolaridade com cargo.",
   "Não converta o nome de um serviço, adjetivo ou título resumido do evento em cargo. Em outorga de delegações de serventias, use cargos [] se não houver denominação literal de cargo na fonte.",
   "vagas e cadastro_reserva são números inteiros ou null, nunca booleanos. salario é número ou null, sem R$ ou separadores de milhar.",
@@ -23,7 +23,7 @@ export const EXTRACT_CONCURSO_PROMPT = [
   "Use apenas trechos fornecidos. Para campos com vários cargos ou fatos, cite até quatro IDs. Trechos distantes serão mantidos como citações separadas. Não cite IDs inexistentes nem combine palavras de trechos diferentes para inventar um cargo.",
   "Cite o trecho com o rótulo do campo e o valor, não só um número isolado; por exemplo, salário precisa de contexto de remuneração, não de taxa de inscrição.",
   "OMITA de evidence campos ausentes ou null. Use {} quando não houver fatos extraídos. Não escreva justificativas ou texto livre em evidence.",
-  "Prompt v7.3 grounded por referências verificáveis da fonte.",
+  "Prompt v8 com escopo de campos e referências verificáveis da fonte.",
 ].join(" ");
 
 export async function extractConcursoWithAI(title: string, rawText: string, budget?: GenerationBudget, sourceName?: string): Promise<AIResult<ExtractConcurso> & { degraded?: boolean }> {
@@ -45,5 +45,5 @@ export async function extractConcursoWithAI(title: string, rawText: string, budg
     if (semanticIssues.length) console.info(JSON.stringify({ event: "ai_extraction_semantic_rejection", issues: semanticIssues }));
     return semanticIssues.length === 0;
   }, budget });
-  return { ...result, ...(grounded.decodingIssues.length ? { validationIssues: grounded.decodingIssues } : {}), groundingRecoveredFields: grounded.recoveredFields, semanticIssues: result.errorCode === "SCHEMA_SEMANTIC_ERROR" ? semanticIssues : [] };
+  return { ...result, ...(grounded.decodingIssues.length ? { validationIssues: grounded.decodingIssues } : {}), groundingRecoveredFields: grounded.recoveredFields, unrequestedFields: grounded.unrequestedFields, semanticIssues: result.errorCode === "SCHEMA_SEMANTIC_ERROR" ? semanticIssues : [] };
 }

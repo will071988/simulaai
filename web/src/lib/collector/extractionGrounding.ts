@@ -6,7 +6,7 @@ import { extractionSemanticIssues } from "./extractionSemantics";
 import { numericEvidenceMatches, SCHOOLING_EVIDENCE_PATTERNS, type ExtractionEvidenceField } from "./extractionEvidence";
 import { CONTEST_STATUSES, findContestStatusEvidence } from "./contestStatus";
 
-export const EXTRACTION_PROMPT_VERSION = "extract_concurso_v7_3_source_refs";
+export const EXTRACTION_PROMPT_VERSION = "extract_concurso_v8_field_scoped";
 const FIELDS = ["orgao", "banca", "vagas", "salario", "inscricao_inicio", "inscricao_fim", "prova_data", "cadastro_reserva", "cargos", "escolaridade", "scope", "state_code", "city", "status"] as const;
 const MAX_TEXT = 4000;
 const MAX_SPAN = 640;
@@ -109,33 +109,50 @@ function sourceExcerpts(rawText: string) {
 export function buildGroundedExtraction(title: string, rawText: string, sourceName?: string) {
   const { source, excerpts } = sourceExcerpts(rawText);
   if (!excerpts.length) throw new Error("INVALID_INPUT");
-  const reference = z.enum(excerpts.map((item) => item.id) as [string, ...string[]]);
-  const evidenceShape = Object.fromEntries(FIELDS.map((field) => [field, z.array(reference).max(excerpts.length).optional()])) as Record<typeof FIELDS[number], z.ZodOptional<z.ZodArray<typeof reference>>>;
   type School = NonNullable<ExtractConcurso["escolaridade"]>[number];
   const schools = Object.entries(SCHOOLING_EVIDENCE_PATTERNS).filter(([, pattern]) => pattern.test(source)).map(([school]) => school as School);
-  const schoolSchema = schools.length ? z.array(z.enum(schools as [School, ...School[]])).optional() : ExtractConcursoSchema.shape.escolaridade.unwrap().max(0).optional();
   const statuses = CONTEST_STATUSES.filter((status) => findContestStatusEvidence(status, source));
-  const statusSchema = statuses.length ? z.enum(statuses as [typeof CONTEST_STATUSES[number], ...(typeof CONTEST_STATUSES[number])[]]).nullable() : z.null();
-  const wireSchema = ExtractConcursoSchema.omit({ evidence: true }).extend({ status: statusSchema, escolaridade: schoolSchema, evidence: z.object(evidenceShape) });
+  const requested = FIELDS.filter((field) => {
+    if (field === "escolaridade") return schools.length > 0;
+    if (field === "status") return statuses.length > 0;
+    if (field === "vagas" || field === "salario" || field === "cadastro_reserva") return numericEvidenceMatches(field, source).length > 0;
+    return true;
+  });
+  const requestedSet = new Set<string>(requested);
+  const reference = z.enum(excerpts.map((item) => item.id) as [string, ...string[]]);
+  const evidenceShape = Object.fromEntries(requested.map((field) => [field, z.array(reference).max(excerpts.length).optional()]));
+  const wireShape: Record<string, z.ZodType> = Object.fromEntries(requested.map((field) => [field, ExtractConcursoSchema.shape[field]]));
+  if (schools.length) wireShape.escolaridade = z.array(z.enum(schools as [School, ...School[]])).optional();
+  if (statuses.length) wireShape.status = z.enum(statuses as [typeof CONTEST_STATUSES[number], ...(typeof CONTEST_STATUSES[number])[]]).nullable();
+  wireShape.evidence = z.object(evidenceShape);
+  const wireSchema = z.object(wireShape);
+  type Wire = Partial<Omit<ExtractConcurso, "evidence">> & { evidence: Partial<Record<typeof FIELDS[number], string[]>> };
   const byId = new Map(excerpts.map((item) => [item.id, item]));
   const decodingIssues: string[] = [];
   const recoveredFields: string[] = [];
+  const unrequestedFields: string[] = [];
   return {
     decodingIssues,
     recoveredFields,
-    input: { title: title.slice(0, 200), sourceName: sourceName?.slice(0, 100), sourceHash: createHash("sha256").update(rawText).digest("hex"), excerpts: excerpts.map((item) => ({ id: item.id, text: item.text })) },
+    unrequestedFields,
+    input: { title: title.slice(0, 200), sourceName: sourceName?.slice(0, 100), fieldsToExtract: requested, sourceHash: createHash("sha256").update(rawText).digest("hex"), excerpts: excerpts.map((item) => ({ id: item.id, text: item.text })) },
     schema: closeSchemaObjects(z.toJSONSchema(wireSchema, { io: "input" })),
     decode(value: unknown): ExtractConcurso {
       decodingIssues.length = 0;
       recoveredFields.length = 0;
+      unrequestedFields.length = 0;
+      if (value && typeof value === "object" && !Array.isArray(value)) {
+        const raw = value as Record<string, unknown>;
+        for (const field of FIELDS) if (!requestedSet.has(field) && raw[field] != null && (!Array.isArray(raw[field]) || raw[field].length > 0)) unrequestedFields.push(field);
+      }
       const parsed = wireSchema.safeParse(value);
       if (!parsed.success) {
         decodingIssues.push(...parsed.error.issues.slice(0, 20).map((issue) => `${issue.path.join(".")}:${issue.code}`));
         throw new Error("INVALID_MODEL_OUTPUT");
       }
-      const wire = parsed.data;
+      const wire = parsed.data as Wire;
       const evidence: NonNullable<ExtractConcurso["evidence"]> = {};
-      for (const field of FIELDS) {
+      for (const field of requested) {
         const ids = wire.evidence[field];
         const fieldValue = wire[field];
         const present = fieldValue != null && (!Array.isArray(fieldValue) || fieldValue.length > 0);
@@ -163,7 +180,7 @@ export function buildGroundedExtraction(title: string, rawText: string, sourceNa
         // Distant spans stay separate quotes. Never invent a contiguous phrase.
         evidence[field] = quotes.length === 1 ? quotes[0] : quotes;
       }
-      return ExtractConcursoSchema.parse({ ...wire, evidence });
+      return ExtractConcursoSchema.parse({ vagas: null, status: null, ...wire, evidence });
     },
   };
 }

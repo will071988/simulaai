@@ -22,6 +22,7 @@ export type AIResult<T> = {
   validationIssues?: string[];
   semanticIssues?: string[];
   groundingRecoveredFields?: string[];
+  unrequestedFields?: string[];
   effectiveModel?: string;
   httpStatus?: number;
   timeoutSource?: "CLIENT_ABORT_SIGNAL" | "NETWORK_TIMEOUT" | "OPENROUTER_OR_UPSTREAM";

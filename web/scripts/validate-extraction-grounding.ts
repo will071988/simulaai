@@ -21,7 +21,14 @@ assert.deepEqual(extractionSemanticIssues(recovered, title, raw, "Cebraspe"), []
 assert.ok(grounded.recoveredFields.includes("orgao") && grounded.recoveredFields.includes("vagas"), "source recovery must be observable and produce actual literal proof");
 assert.throws(() => grounded.decode({ orgao: title, banca: "Cebraspe", vagas: 999, status: null, evidence: { orgao: [first], vagas: [] } }), /INVALID_EVIDENCE_REFERENCE/, "recovery must never drop or overwrite an unsupported non-null value");
 assert.throws(() => grounded.decode({ orgao: "Órgão inventado", banca: "Cebraspe", vagas: null, status: null, evidence: {} }), /INVALID_EVIDENCE_REFERENCE/);
-assert.throws(() => grounded.decode({ orgao: title, banca: "Cebraspe", vagas: null, status: null, escolaridade: ["SUPERIOR"], evidence: { orgao: [first], escolaridade: [first] } }), /INVALID_MODEL_OUTPUT/, "the transport must not offer unproven academic qualifications to the model");
+const unsolicitedSchool = grounded.decode({ orgao: title, banca: "Cebraspe", vagas: null, status: null, escolaridade: ["SUPERIOR"], evidence: { orgao: [first], escolaridade: [first] } });
+assert.equal(grounded.input.fieldsToExtract.includes("escolaridade"), false);
+assert.equal(unsolicitedSchool.escolaridade, undefined); assert.ok(grounded.unrequestedFields.includes("escolaridade"), "unsolicited attributes outside the document contract must be audited and never become canonical facts");
+const unverifiedTable = "Instituto Exemplo. Cebraspe. Quadro de vagas por cargo. Cargo | AC | PcD | Total. Analista | 12 | 2 | 14.";
+const tableContract = buildGroundedExtraction(title, unverifiedTable, "Cebraspe");
+assert.equal(tableContract.input.fieldsToExtract.includes("vagas"), false, "do not ask the model to invent a global vacancy count from an unsupported table grammar");
+const tableResult = tableContract.decode({ orgao: title, banca: "Cebraspe", vagas: 999, evidence: { orgao: [tableContract.input.excerpts[0].id] } });
+assert.equal(tableResult.vagas, null); assert.ok(tableContract.unrequestedFields.includes("vagas"));
 const absent = grounded.decode({ orgao: title, banca: "Cebraspe", vagas: null, status: null, evidence: { orgao: [first], vagas: [], status: [], irrelevant_extra: [] } });
 assert.equal(absent.evidence?.vagas, undefined); assert.equal(absent.evidence?.status, undefined); assert.equal("irrelevant_extra" in (absent.evidence || {}), false);
 assert.throws(() => buildGroundedExtraction(title, " \n\t ", "Cebraspe"), /INVALID_INPUT/);
@@ -47,6 +54,12 @@ const degreeIds = degree.input.excerpts.filter((excerpt) => /bacharel|diploma/.t
 assert.ok(degreeIds.length > 0, "a generic requirements heading must not crowd out the actual academic qualification");
 const degreeValue = degree.decode({ orgao: title, banca: "Cebraspe", vagas: null, status: null, escolaridade: ["SUPERIOR"], evidence: { orgao: [degree.input.excerpts[0].id], escolaridade: degreeIds } });
 assert.deepEqual(extractionSemanticIssues(degreeValue, title, degreeRaw, "Cebraspe"), []);
+assert.ok(degree.input.fieldsToExtract.includes("escolaridade"), "supported qualifications must remain in scope even late in the source");
+assert.throws(() => degree.decode({ orgao: title, banca: "Cebraspe", escolaridade: ["MEDIO"], evidence: {} }), /INVALID_MODEL_OUTPUT/, "scoping must not bypass validation of requested qualifications");
+assert.ok(grounded.input.fieldsToExtract.includes("vagas") && grounded.input.fieldsToExtract.includes("salario"), "explicit numerical facts must remain in scope");
+assert.throws(() => grounded.decode({ orgao: title, banca: "Cebraspe", vagas: 12, salario: 999, evidence: {} }), /INVALID_EVIDENCE_REFERENCE/, "requested unsupported numbers must still fail instead of being discarded");
+grounded.decode({ orgao: title, banca: "Cebraspe", vagas: null, evidence: {} });
+assert.deepEqual(grounded.unrequestedFields, [], "audit state must reset between decoding attempts");
 const late = long.input.excerpts.find((item) => item.text.includes("28/11/2026"))!;
 const separated = long.decode({ orgao: title, banca: "Cebraspe", vagas: null, status: null, evidence: { orgao: [long.input.excerpts[0].id, late.id] } });
 assert.equal(typeof separated.evidence?.orgao, "string", "over-citation must be reduced to the supporting source quote without changing the fact");
