@@ -33,13 +33,18 @@ export function findContestStatusEvidence(value: string, text: string): { start:
   let expression = status === "CANCELADO"
     ? `cancelamento\\s+(?:(?:do|de|deste|desse|da|desta)\\s+)?(?:(?:presente|referido|respectivo)\\s+)?${event}|${event}\\s+(?:(?:esta|foi|fica|sera)\\s+)?cancelad[oa]|cancelad[oa]\\s+(?:(?:o|a|este|esta)\\s+)?(?:(?:presente|referido)\\s+)?${event}|cancelamento\\s+do\\s+edital[^;]{0,180}bem\\s+como\\s+das\\s+inscricoes[^;]{0,100}processo\\s+seletivo`
     : status === "EDITAL_IMEINENTE" ? "\\bedital\\s+(?:iminente|imeinente)\\b" : `\\b${status.toLowerCase().replace(/_/g, "\\s+")}\\b`;
-  if (status === "RESULTADO") expression = `\\bresultado\\s+(?:final|definitivo)\\s+(?:do|deste|desse)\\s+${event}\\b`;
+  if (status === "RESULTADO") expression = "\\bresultado\\s+(?:final|definitivo)\\b";
   if (status === "PREVISTO") expression = `\\b${event}\\s+previst[oa]\\s+para\\b`;
   if (status === "ENCERRADO") expression = `\\b${event}\\s+(?:(?:esta|foi|fica)\\s+)?encerrad[oa]\\b|\\bencerramento\\s+(?:do|deste|desse)\\s+${event}\\b`;
   if (status === "AUTORIZADO") expression = `\\bautorizad[oa]\\s+(?:a\\s+realizacao\\s+(?:do|de)|o|a)\\s+${event}\\b|\\b${event}\\s+(?:(?:esta|foi|fica)\\s+)?autorizad[oa]\\b|\\bautoriza\\s+a\\s+realizacao\\s+(?:do|de)\\s+${event}\\b`;
   for (const match of folded.matchAll(new RegExp(expression, "g"))) {
     const prefix = folded.slice(Math.max(0, match.index! - 50), match.index);
     if (/(?:\bnao\s+(?:(?:sera|foi|esta|fica|houve|havera|ha|ocorrera)\s+)?|\bsem\s+(?:o\s+)?|\b(?:possibilidade|hipotese|previsao|risco)\s+de\s+)$/.test(prefix)) continue;
+    if (status === "RESULTADO") {
+      const suffix = folded.slice(match.index! + match[0].length).split(/[.;]/, 1)[0].slice(0, 100);
+      const entireContest = new RegExp(`^\\s+(?:do|deste|desse)\\s+${event}\\b`).test(suffix);
+      if (!entireContest && /\b(?:analise|isencao|inscricao|inscricoes|recurso|recursos|atendimento|heteroidentificacao|avaliacao|prova|provas|etapa|fase|solicitacao|solicitacoes)\b/.test(suffix)) continue;
+    }
     return { start: match.index!, end: match.index! + match[0].length };
   }
   return undefined;
@@ -53,7 +58,7 @@ export function resolveEvidencedContestStatus(input: {
 }): ContestStatus | null {
   const status = normalizeContestStatus(input.value);
   if (input.sourceTier !== 1 || !status || !isLiteralExtractionEvidence("status", input.evidence, input.rawText, status)) return null;
-  return extractionEvidenceQuotes(input.evidence).some((quote) => findContestStatusEvidence(status, quote)) ? status : null;
+  return findContestStatusEvidence(status, input.rawText) && extractionEvidenceQuotes(input.evidence).some((quote) => findContestStatusEvidence(status, quote)) ? status : null;
 }
 
 export function canTransitionContestStatus(from: ContestStatus | null, to: ContestStatus, input: {

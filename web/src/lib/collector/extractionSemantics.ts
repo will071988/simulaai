@@ -39,7 +39,7 @@ export function extractionSemanticIssues(value: ExtractConcurso, title: string, 
   if (value.scope && deterministic.scope !== value.scope && (!literal("scope") || !someQuote("scope", (quote) => ({ NACIONAL: /nacional/, ESTADUAL: /estadual|estado/, MUNICIPAL: /municipal|municipio|prefeitura/, REGIONAL: /regional/ }[value.scope!]).test(fold(quote))))) issues.push("scope:UNSUPPORTED_SCOPE");
   if (value.status) {
     const status = normalizeContestStatus(value.status);
-    if (!status || !literal("status") || !someQuote("status", (quote) => Boolean(findContestStatusEvidence(status, quote)))) issues.push("status:UNSUPPORTED_STATUS");
+    if (!status || !literal("status") || !findContestStatusEvidence(status, rawText) || !someQuote("status", (quote) => Boolean(findContestStatusEvidence(status, quote)))) issues.push("status:UNSUPPORTED_STATUS");
   }
   return [...new Set(issues)];
 }

@@ -79,6 +79,8 @@ for (const [value, evidence] of [["RESULTADO", "Resultado final da análise de i
   assert.equal(resolveEvidencedContestStatus({ value, evidence, rawText: evidence, sourceTier: 1 }), null, "a stage/candidate statement must not become the lifecycle status of the entire contest");
 }
 assert.equal(resolveEvidencedContestStatus({ value: "RESULTADO", evidence: "Resultado final do concurso público.", rawText: "Resultado final do concurso público.", sourceTier: 1 }), "RESULTADO");
+assert.equal(resolveEvidencedContestStatus({ value: "RESULTADO", evidence: "resultado final", rawText: "Foi publicado o resultado final.", sourceTier: 1 }), "RESULTADO");
+assert.equal(resolveEvidencedContestStatus({ value: "RESULTADO", evidence: "resultado final", rawText: "resultado final da análise de isenção da taxa de inscrição.", sourceTier: 1 }), null, "clipping a stage qualifier out of a quotation must not create a global final result");
 assert.equal(canTransitionContestStatus("INSCRICOES_ABERTAS", "CANCELADO", { sourceTier: 1, hasEvidence: true }), true);
 assert.equal(canTransitionContestStatus("CANCELADO", "INSCRICOES_ABERTAS", { sourceTier: 1, hasEvidence: true }), false);
 const escaped = buildGroundedExtraction(title.repeat(100), '"\\'.repeat(5000), "Cebraspe");
