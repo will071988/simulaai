@@ -1,5 +1,43 @@
 # Lançamento — evidências de 23/10/2026
 
+## Atualização de 26/10/2026 — Chrome integrado e contrato v8
+
+**Lançamento comercial continua bloqueado.** As seções abaixo desta atualização
+registram o snapshot histórico de 23/10, não o estado atual.
+
+- Chrome integrado ao OpenCode utilizado em `/admin/operacoes` e `/concursos`.
+  O painel privado exige login de administrador na sessão integrada; não houve
+  execução do worker nem retry por esse navegador nesta rodada.
+- Contrato `extract_concurso_v8_field_scoped` publicado no commit `b5b4d78`.
+  [CI completo aprovado](https://github.com/will071988/simulaai/actions/runs/40341231138),
+  incluindo build e E2E do gate. Deploy Production `READY`:
+  `dpl_HAdNXKcoCTFQnmXvKgScWNuUd2e1`, alias público conferido.
+- TypeScript, `test:2.8`, `test:ai-budget`, lint e auditoria de produção passaram
+  localmente; zero vulnerabilidades. Build local com ambiente isolado passou.
+  Build com o ambiente local original falhou por URL Supabase inválida; nenhuma
+  credencial foi alterada ou exposta para contornar essa configuração.
+- Campos fora do contrato do documento não atualizam fatos canônicos e são
+  auditados em `ai_unrequested_fields`. Campos solicitados continuam exigindo
+  prova literal; regressões rejeitam vagas/salários inventados e escolaridade
+  incompatível, além de preservar qualificações no fim do documento.
+- O último lote real anterior, em Chrome separado, teve 1 sucesso e 4 falhas.
+  Seu snapshot foi 9 AI_PENDING, 38 FAILED, 26 PROCESSED, 4 FETCHED, claims zero,
+  22 reservas/22 logs e 215 evidências. **Não é um snapshot atual nem comprovação
+  de sucesso do contrato v8 em produção.**
+- A inspeção pública integrada encontrou frases procedimentais exibidas como
+  cargos. Reprodução local confirmou que `enrichDocument` aceita
+  “O concurso para os cargos de que trata este edital compreenderá as seguintes
+  fases” como um cargo; o caso de controle `Cargo: Analista Administrativo`
+  extrai o nome esperado. Origem em `web/src/lib/collector/enrichment.ts`.
+  Correção e reparação auditada dos registros existentes continuam pendentes;
+  nenhum dado foi removido ou ocultado na interface.
+
+Próximos gates: login administrativo no Chrome integrado; validar uma execução
+v8 e persistência/accounting antes de lote; revisar os quatro documentos falhos
+antes de `RETRY_DOCUMENT`; corrigir qualidade dos cargos; comprovar restore real
+e cópia externa; configurar e validar billing live. FREE-ONLY, limites de 10 por
+execução e 50 por dia, e `STRIPE_LIVEMODE=false` permanecem preservados.
+
 ## Decisão atual
 
 **Publicado e funcional, mas lançamento comercial ainda bloqueado.**
