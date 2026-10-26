@@ -77,7 +77,7 @@ nenhum e-mail é enviado ou senha real alterada pelo teste.
 
 #### Correção do coletor: referências verificáveis (v7)
 
-A extração atual usa `extract_concurso_v8_field_scoped`. Em vez de redigitar
+A extração atual usa `extract_concurso_v8_1_literal_roles`. Em vez de redigitar
 citações de PDF, o modelo aponta IDs de trechos selecionados no servidor. O input
 é limitado a aproximadamente 4 mil caracteres JSON de fonte, com diversidade de
 campos: tabelas de salário não devem esconder calendários de inscrição posteriores
@@ -107,6 +107,13 @@ atualizam o cadastro. Quadros tabulares sem parser de contagem seguro permanecem
 com vagas desconhecidas, não com um total inferido. Atualizações parciais preservam
 valores anteriores via resolvedor; valores de campos efetivamente solicitados
 continuam exigindo prova, e erros não são convertidos em sucesso.
+
+O parser de cargos exige rótulo explícito (`Cargo:`, `Cargo 1:` ou `cargo de`),
+preserva nomes quebrados em linhas de PDF e rejeita frases procedimentais como
+“que trata este edital”. Em tabelas, códigos `QPBM/1` e `QPBM/2` são qualificações,
+não nomes a concatenar ao cargo. O modelo recebe a mesma orientação e valores
+inventados continuam rejeitados. A correção não apaga nem repara automaticamente
+os registros históricos já publicados; esses exigem revisão com evidências.
 
 O cache guarda o resultado canônico decodificado, nunca IDs sem contexto. Extrações
 salvas em metadata só são reutilizadas se também passarem na semântica; dados

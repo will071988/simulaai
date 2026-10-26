@@ -6,7 +6,7 @@ import { extractionSemanticIssues } from "./extractionSemantics";
 import { numericEvidenceMatches, SCHOOLING_EVIDENCE_PATTERNS, type ExtractionEvidenceField } from "./extractionEvidence";
 import { CONTEST_STATUSES, findContestStatusEvidence } from "./contestStatus";
 
-export const EXTRACTION_PROMPT_VERSION = "extract_concurso_v8_field_scoped";
+export const EXTRACTION_PROMPT_VERSION = "extract_concurso_v8_1_literal_roles";
 const FIELDS = ["orgao", "banca", "vagas", "salario", "inscricao_inicio", "inscricao_fim", "prova_data", "cadastro_reserva", "cargos", "escolaridade", "scope", "state_code", "city", "status"] as const;
 const MAX_TEXT = 4000;
 const MAX_SPAN = 640;

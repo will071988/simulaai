@@ -41,7 +41,7 @@
     "test:password-recovery:ui-fixture": "tsx scripts/validate-password-recovery-ui-fixture.ts",
     "test:2.7": "tsx scripts/validate-2.7.ts && tsx scripts/validate-2.7-database.ts",
     "test:2.7:live": "node --env-file=.env.local --import tsx scripts/validate-2.7-live.ts",
-    "test:2.8": "tsx scripts/validate-2.8.ts && tsx scripts/validate-worker-2.8.ts && tsx scripts/validate-multi-provider-2.8.ts && tsx scripts/validate-openrouter-models-2.8.ts && tsx scripts/validate-extraction-grounding.ts && tsx scripts/validate-adapters.ts && tsx scripts/validate-ssrf.ts && tsx scripts/validate-collector-database.ts",
+    "test:2.8": "tsx scripts/validate-2.8.ts && tsx scripts/validate-worker-2.8.ts && tsx scripts/validate-multi-provider-2.8.ts && tsx scripts/validate-openrouter-models-2.8.ts && tsx scripts/validate-extraction-grounding.ts && tsx scripts/validate-role-extraction.ts && tsx scripts/validate-adapters.ts && tsx scripts/validate-ssrf.ts && tsx scripts/validate-collector-database.ts",
     "test:2.8:live": "tsx scripts/validate-2.8-live.ts",
     "snapshot:2.8:production": "node --env-file=.env.local --import tsx scripts/snapshot-2.8-production.ts",
     "smoke:2.8:performance": "tsx scripts/smoke-performance-2.8.ts",

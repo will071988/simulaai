@@ -10,6 +10,7 @@ export const EXTRACT_CONCURSO_PROMPT = [
   "Extraia SOMENTE os campos listados em fieldsToExtract, além de evidence. O contrato é específico deste documento; não inclua escolaridade, status ou números que não foram solicitados.",
   "orgao e banca são obrigatórios. Para os demais campos solicitados, use null quando ausentes e [] para listas ausentes. Não adicione campos fora de fieldsToExtract.",
   "Copie literalmente o nome completo do órgão e dos cargos: não abrevie nem reformule. Não confunda escolaridade com cargo.",
+  "Em tabelas com colunas Cargo e Qualificação, não una colunas: em Cargo 2: Soldado QPBM/1, o cargo é Soldado. Uma linha posterior QPBM/2 não autoriza inventar Soldado QPBM/2. Preserve hífens do nome, como Oficial de Estado-Maior. Frases como que trata este edital não são cargos.",
   "Não converta o nome de um serviço, adjetivo ou título resumido do evento em cargo. Em outorga de delegações de serventias, use cargos [] se não houver denominação literal de cargo na fonte.",
   "vagas e cadastro_reserva são números inteiros ou null, nunca booleanos. salario é número ou null, sem R$ ou separadores de milhar.",
   "Use datas ISO YYYY-MM-DD apenas quando explícitas. Não suponha vagas zero para cadastro de reserva.",

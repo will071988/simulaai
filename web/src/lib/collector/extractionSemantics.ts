@@ -1,7 +1,7 @@
 import type { ExtractConcurso } from "./schemas";
 import { isLiteralExtractionEvidence, extractionEvidenceQuotes, numericEvidenceMatches, SCHOOLING_EVIDENCE_PATTERNS } from "./extractionEvidence";
 import { enrichDocument } from "./enrichment";
-import { isSchoolingCategory } from "../contest-role";
+import { isProceduralRole, isSchoolingCategory } from "../contest-role";
 import { normalizeContestStatus, findContestStatusEvidence } from "./contestStatus";
 
 const fold = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
@@ -33,7 +33,7 @@ export function extractionSemanticIssues(value: ExtractConcurso, title: string, 
   }
   if (value.inscricao_inicio && value.inscricao_fim && value.inscricao_inicio > value.inscricao_fim) issues.push("inscricao:REVERSED_RANGE");
   if (value.prova_data && value.inscricao_fim && value.prova_data < value.inscricao_fim) issues.push("prova_data:BEFORE_REGISTRATION_END");
-  for (const role of value.cargos || []) if (isSchoolingCategory(role) || !source.includes(fold(role)) || (!deterministic.cargos.includes(role) && (!literal("cargos") || !someQuote("cargos", (quote) => fold(quote).includes(fold(role)))))) issues.push("cargos:UNSUPPORTED_ROLE");
+  for (const role of value.cargos || []) if (isSchoolingCategory(role) || isProceduralRole(role) || !source.includes(fold(role)) || (!deterministic.cargos.includes(role) && (!literal("cargos") || !someQuote("cargos", (quote) => fold(quote).includes(fold(role)))))) issues.push("cargos:UNSUPPORTED_ROLE");
   for (const level of value.escolaridade || []) if (!deterministic.escolaridade.includes(level) && (!literal("escolaridade") || !someQuote("escolaridade", (quote) => Boolean(SCHOOLING_EVIDENCE_PATTERNS[level]?.test(quote))))) issues.push("escolaridade:UNSUPPORTED_LEVEL");
   for (const field of ["city", "state_code"] as const) if (value[field] && deterministic[field] !== value[field] && (!literal(field) || !someQuote(field, (quote) => field === "state_code" ? new RegExp(`(?:^|[^\\p{L}\\p{N}])${value[field]}(?=$|[^\\p{L}\\p{N}])`, "u").test(quote.toUpperCase()) : fold(quote).includes(fold(value[field]!))))) issues.push(`${field}:UNSUPPORTED_LOCATION`);
   if (value.scope && deterministic.scope !== value.scope && (!literal("scope") || !someQuote("scope", (quote) => ({ NACIONAL: /nacional/, ESTADUAL: /estadual|estado/, MUNICIPAL: /municipal|municipio|prefeitura/, REGIONAL: /regional/ }[value.scope!]).test(fold(quote))))) issues.push("scope:UNSUPPORTED_SCOPE");
