@@ -13,6 +13,7 @@ for (const text of [
 ]) assert.deepEqual(enrichDocument(title, text).cargos, [], `procedural prose must not become a role: ${text}`);
 
 assert.deepEqual(enrichDocument(title, "Cargo: Analista Administrativo. Cargo: Técnico Legislativo.").cargos, ["Analista Administrativo", "Técnico Legislativo"]);
+assert.deepEqual(enrichDocument(title, "Cargo: Analista Administrativo\nCargo: Técnico em Informática").cargos, ["Analista Administrativo", "Técnico em Informática"], "adjacent labels must terminate the previous name without discarding PDF line wrapping");
 assert.deepEqual(enrichDocument(title, "Concurso para o cargo de Professor C – Matemática.").cargos, ["Professor C – Matemática"]);
 const table = "Cargo Qualificação Vagas imediatas Cadastro de reserva\nCargo 1: Oficial de\nEstado-Maior – 16 2 4 22\nCargo 2: Soldado QPBM/1 78 6 21 105\nQPBM/2 33 3 9 45";
 assert.deepEqual(enrichDocument(title, table).cargos, ["Oficial de Estado-Maior", "Soldado"], "a qualification column is not part of the role name; wrapped role labels remain complete");
