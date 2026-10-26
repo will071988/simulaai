@@ -59,6 +59,22 @@ O client OpenRouter valida a credencial uma vez por instância da execução ant
 - Na execução de documentos reais, o worker interrompeu os lotes após erros de entrada/semântica, liberando claims e preservando a fila. A revisão `extract_concurso_v6_grounded` reforça que UF não deve ser inferida e trata apenas espaços/quebras de linha de PDF como formatação na comparação de citações. Palavras, acentos, pontuação e fatos continuam exigindo suporte na fonte. Testes cobrem citação equivalente com quebra de linha e rejeição de citação alterada.
 - O erro Groq HTTP 400 com código exato `json_validate_failed` é classificado como `INVALID_JSON`, permitindo fallback; outros HTTP 400 continuam sendo `INVALID_INPUT`. O texto/rascunho devolvido pelo provedor não é registrado. UFs são limitadas às 27 siglas válidas; uma citação de duas letras só é aceita como evidência de UF quando aparece explicitamente como token maiúsculo na fonte, não dentro de nomes de estados. O cliente real validou o edital ALPREV por fallback para Gemini; a ordem operacional foi ajustada para Gemini → Groq → OpenRouter.
 
+#### Recuperação de senha
+
+Em `/conta`, **Esqueci minha senha** solicita o link pelo Supabase Auth sem exigir
+a senha anterior e sem confirmar se o endereço possui uma conta. O link leva a
+`/conta/redefinir-senha`, que exige sessão autenticada, nova senha com pelo menos
+8 caracteres e confirmação. Links inválidos ou expirados permitem voltar e
+solicitar outro envio. Nenhuma senha ou token é registrado pela interface.
+
+No projeto Supabase autorizado, inclua
+`https://simulaai-kappa.vercel.app/conta/redefinir-senha` em **Authentication → URL
+Configuration → Redirect URLs**, e mantenha o Site URL e o envio de e-mails
+configurados. A entrega real do e-mail e a allowlist remota não são comprovadas
+pelos testes isolados. Para estes, use `npm run test:password-recovery:ui-fixture`
+com o build local servido em `127.0.0.1:3026` e `BROWSER_EXECUTABLE_PATH` definido;
+nenhum e-mail é enviado ou senha real alterada pelo teste.
+
 #### Correção do coletor: referências verificáveis (v7)
 
 A extração atual usa `extract_concurso_v8_field_scoped`. Em vez de redigitar

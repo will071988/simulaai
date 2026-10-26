@@ -8,7 +8,7 @@ import { BillingAccountPanel } from "@/components/BillingAccountPanel";
 import { supabase } from "@/lib/supabase";
 
 type Profile = { userId: string; nome: string; email: string | null; createdAt: string; updatedAt: string };
-type Mode = "entrar" | "cadastro";
+type Mode = "entrar" | "cadastro" | "recuperar";
 
 function authMessage(code?: string) {
   if (code === "email_not_confirmed") return "Confirme seu e-mail antes de entrar.";
@@ -61,7 +61,11 @@ export default function ContaPage() {
   async function submitCredentials(event: FormEvent) {
     event.preventDefault(); setBusy(true); setError(""); setNotice("");
     try {
-      if (mode === "cadastro") {
+      if (mode === "recuperar") {
+        const { error: authError } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo: `${window.location.origin}/conta/redefinir-senha` });
+        if (authError) { setError("Não foi possível solicitar a recuperação agora. Aguarde alguns minutos e tente novamente."); return; }
+        setNotice("Se houver uma conta apta para recuperação com este e-mail, você receberá um link para redefinir sua senha. Verifique a caixa de entrada e o spam.");
+      } else if (mode === "cadastro") {
         if (nome.trim().length < 2 || password.length < 8) { setError("Informe seu nome e use uma senha com pelo menos 8 caracteres."); return; }
         const { data, error: authError } = await supabase.auth.signUp({ email: email.trim(), password, options: { data: { nome: nome.trim() }, emailRedirectTo: `${window.location.origin}/conta` } });
         if (authError) { setError(authMessage(authError.code)); return; }
@@ -73,7 +77,8 @@ export default function ContaPage() {
         setNotice("Sessão iniciada com segurança.");
       }
       setPassword("");
-    } finally { setBusy(false); }
+    } catch { setError("Não foi possível conectar ao serviço de autenticação. Tente novamente."); }
+    finally { setBusy(false); }
   }
 
   async function sendMagicLink() {
@@ -163,15 +168,17 @@ export default function ContaPage() {
         </div>
       </div> : <div className="mt-8 rounded-3xl bg-white p-6 text-zinc-900">
         <div className="flex rounded-full bg-zinc-100 p-1">
-          <button onClick={() => { setMode("entrar"); setError(""); }} className={`flex-1 rounded-full px-4 py-2 text-sm font-bold ${mode === "entrar" ? "bg-zinc-900 text-white" : "text-zinc-600"}`}>Entrar</button>
-          <button onClick={() => { setMode("cadastro"); setError(""); }} className={`flex-1 rounded-full px-4 py-2 text-sm font-bold ${mode === "cadastro" ? "bg-zinc-900 text-white" : "text-zinc-600"}`}>Criar conta</button>
+          <button disabled={busy} onClick={() => { setMode("entrar"); setError(""); setNotice(""); setPassword(""); }} className={`flex-1 rounded-full px-4 py-2 text-sm font-bold ${mode === "entrar" ? "bg-zinc-900 text-white" : "text-zinc-600"}`}>Entrar</button>
+          <button disabled={busy} onClick={() => { setMode("cadastro"); setError(""); setNotice(""); setPassword(""); }} className={`flex-1 rounded-full px-4 py-2 text-sm font-bold ${mode === "cadastro" ? "bg-zinc-900 text-white" : "text-zinc-600"}`}>Criar conta</button>
         </div>
+        {mode === "recuperar" && <div className="mt-6"><h2 className="font-display text-xl font-bold">Recuperar senha</h2><p className="mt-2 text-sm text-zinc-600">Informe o e-mail da sua conta para solicitar o link de redefinição.</p></div>}
         <form onSubmit={submitCredentials} className="mt-6 space-y-4">
           {mode === "cadastro" && <label className="block text-sm font-semibold">Nome<input value={nome} onChange={(event) => setNome(event.target.value)} required minLength={2} maxLength={80} autoComplete="name" className="mt-1 w-full rounded-xl border border-zinc-200 p-3" /></label>}
           <label className="block text-sm font-semibold">E-mail<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required autoComplete="email" className="mt-1 w-full rounded-xl border border-zinc-200 p-3" /></label>
-          <label className="block text-sm font-semibold">Senha<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} required minLength={8} autoComplete={mode === "cadastro" ? "new-password" : "current-password"} className="mt-1 w-full rounded-xl border border-zinc-200 p-3" /></label>
-          <button disabled={busy} className="w-full rounded-full bg-zinc-900 py-3 font-bold text-white disabled:opacity-50">{busy ? "Aguarde…" : mode === "cadastro" ? "Criar conta" : "Entrar"}</button>
+          {mode !== "recuperar" && <label className="block text-sm font-semibold">Senha<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} required minLength={8} autoComplete={mode === "cadastro" ? "new-password" : "current-password"} className="mt-1 w-full rounded-xl border border-zinc-200 p-3" /></label>}
+          <button disabled={busy} className="w-full rounded-full bg-zinc-900 py-3 font-bold text-white disabled:opacity-50">{busy ? "Aguarde…" : mode === "recuperar" ? "Enviar link de recuperação" : mode === "cadastro" ? "Criar conta" : "Entrar"}</button>
         </form>
+        {mode === "entrar" && <button type="button" disabled={busy} onClick={() => { setMode("recuperar"); setError(""); setNotice(""); setPassword(""); }} className="mt-4 w-full rounded-full py-2 text-sm font-semibold text-zinc-700 underline hover:text-zinc-950 disabled:opacity-50">Esqueci minha senha</button>}
         {mode === "entrar" && <><div className="my-5 flex items-center gap-3 text-xs text-zinc-400"><span className="h-px flex-1 bg-zinc-200" />ou<span className="h-px flex-1 bg-zinc-200" /></div><button onClick={sendMagicLink} disabled={busy || !email.trim()} className="w-full rounded-full border border-zinc-300 py-3 font-bold disabled:opacity-50">Enviar link mágico</button></>}
         <p className="mt-5 text-xs text-zinc-500">Já tem uma conta? Use Entrar com sua senha original. Repetir o cadastro não altera a senha. Ao usar link mágico, a conta precisa existir.</p>
       </div>}
