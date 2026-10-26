@@ -71,7 +71,7 @@ export function smokeDependencies(provider: string, model?: string): RouterDepen
   return { ...dependencies, order: [provider], ...(model ? { openRouterModels: () => [model] } : {}), getCached: async () => null, setCached: async () => {} };
 }
 
-type Execution = { providers: Record<string, AIProvider>; failures: Map<string, number>; health: Map<string, "healthy" | "degraded" | "unavailable"> };
+type Execution = { providers: Record<string, AIProvider>; failures: Map<string, number>; health: Map<string, "healthy" | "degraded" | "unavailable">; authFailures: Map<string, { httpStatus?: number }> };
 const executions = new WeakMap<GenerationBudget, Execution>();
 export function isFallbackError(code?: string): boolean {
   return ["TIMEOUT", "EMPTY_BODY", "INVALID_JSON", "429", "HTTP_5XX", "PROVIDER_UNAVAILABLE", "MODEL_UNAVAILABLE"].includes(code || "") || /^HTTP_5\d\d$/.test(code || "");
@@ -90,7 +90,7 @@ export async function generateWithFallback<T>(req: AIRequest, opts?: { decode?: 
   const budget = opts?.budget || new GenerationBudget(aiConfig.maxPerRun);
   const ord = budget.providerOrder || deps.order;
   let execution = executions.get(budget);
-  if (!execution) { execution = { providers: deps.providers(), failures: new Map(), health: new Map() }; executions.set(budget, execution); }
+  if (!execution) { execution = { providers: deps.providers(), failures: new Map(), health: new Map(), authFailures: new Map() }; executions.set(budget, execution); }
   let last: AIResult<T> = { ok: false, provider: "all", model: "all", latencyMs: 0, errorCode: "SKIPPED_NOT_CONFIGURED" };
   const attempts: NonNullable<AIResult<T>["attempts"]> = [];
   const targets = [...new Set(ord)].flatMap((name) => {
@@ -105,13 +105,15 @@ export async function generateWithFallback<T>(req: AIRequest, opts?: { decode?: 
   for (const { name, key } of targets) {
     const p = execution.providers[key];
     if (!p || (deps.configured && !deps.configured(name))) { execution.health.set(name, "unavailable"); continue; }
+    const rejectedCredential = execution.authFailures.get(name);
+    if (rejectedCredential) return { ok: false, provider: name, model: p.model, latencyMs: 0, errorCode: "AUTH_CONFIGURATION_ERROR", httpStatus: rejectedCredential.httpStatus, attempts, degraded: true };
     if ((execution.failures.get(key) || 0) >= 2) { last = { ok: false, provider: name, model: p.model, latencyMs: 0, errorCode: "MODEL_UNAVAILABLE" }; continue; }
     if (!deps.modelAllowed(p.model, name)) return { ok: false, provider: name, model: p.model, latencyMs: 0, errorCode: "AUTH_CONFIGURATION_ERROR", attempts, degraded: true };
     const health = await p.healthCheck();
     if (!health.healthy) {
       last = { ok: false, provider: name, model: p.model, latencyMs: 0, httpStatus: health.credentialHttpStatus, errorCode: health.errorCode || "PROVIDER_UNAVAILABLE" };
       execution.health.set(key, "unavailable");
-      if (health.errorCode === "AUTH_CONFIGURATION_ERROR") return { ...last, attempts, degraded: true };
+      if (health.errorCode === "AUTH_CONFIGURATION_ERROR") { execution.authFailures.set(name, { httpStatus: health.credentialHttpStatus }); return { ...last, attempts, degraded: true }; }
       continue;
     }
     if (budget.calls >= budget.limit) return { ...last, errorCode: "BUDGET_EXHAUSTED", attempts, degraded: true };
@@ -140,6 +142,7 @@ export async function generateWithFallback<T>(req: AIRequest, opts?: { decode?: 
       // Rejected facts/input belong to this document. They must stop its
       // fallback, but must not open a provider outage circuit for other items.
       execution.health.set(key, "degraded");
+      if (last.errorCode === "AUTH_CONFIGURATION_ERROR") execution.authFailures.set(name, { httpStatus: last.httpStatus });
       return { ...last, attempts, degraded: true };
     }
     const failures = (execution.failures.get(key) || 0) + 1;

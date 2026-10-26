@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseService } from "@/lib/supabase-server";
-import { deriveCollectorHealth } from "@/lib/collector/health";
+import { deriveCollectorHealth, selectPendingHealthJob } from "@/lib/collector/health";
 import { boundedNumber, observeApiRoute, publicHealthPayload } from "@/lib/observability/operations";
 
 const headers = { "Cache-Control": "no-store" };
@@ -8,15 +8,17 @@ const headers = { "Cache-Control": "no-store" };
 async function health() {
   try {
     const svc = supabaseService();
-    const [run, pending, sources] = await Promise.all([
+    const [run, pending, sources, aiJobs] = await Promise.all([
       svc.from("collector_runs").select("started_at,finished_at,status,errors_count,parsed_success,parse_failed").order("started_at", { ascending: false }).limit(1).maybeSingle(),
       svc.from("collector_documents").select("id", { count: "exact", head: true }).eq("status", "AI_PENDING"),
       svc.from("collector_sources").select("health_status,failure_count").eq("enabled", true),
+      svc.from("ops_job_runs").select("status,started_at,finished_at,counters").eq("job_name", "AI_PENDING").order("started_at", { ascending: false }).limit(10),
     ]);
-    if (run.error || pending.error || sources.error) return NextResponse.json({ ok: false, status: "unavailable" }, { status: 503, headers });
+    if (run.error || pending.error || sources.error || aiJobs.error) return NextResponse.json({ ok: false, status: "unavailable" }, { status: 503, headers });
     const active = sources.data || [];
     const status = deriveCollectorHealth({
       lastRun: run.data,
+      lastPendingJob: selectPendingHealthJob(aiJobs.data || []),
       sourcesHealthy: active.filter((source) => source.health_status === "HEALTHY").length,
       sourcesDegraded: active.filter((source) => source.health_status === "DEGRADED").length,
       sourcesFailed: active.filter((source) => source.health_status === "FAILED").length,

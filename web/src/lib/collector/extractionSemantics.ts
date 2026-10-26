@@ -2,7 +2,7 @@ import type { ExtractConcurso } from "./schemas";
 import { isLiteralExtractionEvidence, extractionEvidenceQuotes, numericEvidenceMatches, SCHOOLING_EVIDENCE_PATTERNS } from "./extractionEvidence";
 import { enrichDocument } from "./enrichment";
 import { isSchoolingCategory } from "../contest-role";
-import { normalizeContestStatus } from "./contestStatus";
+import { normalizeContestStatus, findContestStatusEvidence } from "./contestStatus";
 
 const fold = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
 const validDate = (value: string) => { const date = new Date(`${value}T00:00:00Z`); return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value; };
@@ -39,8 +39,7 @@ export function extractionSemanticIssues(value: ExtractConcurso, title: string, 
   if (value.scope && deterministic.scope !== value.scope && (!literal("scope") || !someQuote("scope", (quote) => ({ NACIONAL: /nacional/, ESTADUAL: /estadual|estado/, MUNICIPAL: /municipal|municipio|prefeitura/, REGIONAL: /regional/ }[value.scope!]).test(fold(quote))))) issues.push("scope:UNSUPPORTED_SCOPE");
   if (value.status) {
     const status = normalizeContestStatus(value.status);
-    const statusTerms = status?.toLowerCase().replace(/_/g, " ");
-    if (!status || !literal("status") || !someQuote("status", (quote) => fold(quote).includes(statusTerms!))) issues.push("status:UNSUPPORTED_STATUS");
+    if (!status || !literal("status") || !someQuote("status", (quote) => Boolean(findContestStatusEvidence(status, quote)))) issues.push("status:UNSUPPORTED_STATUS");
   }
   return [...new Set(issues)];
 }

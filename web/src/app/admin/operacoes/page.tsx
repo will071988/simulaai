@@ -6,6 +6,7 @@ import { Header, Footer } from "@/components/Header";
 import { supabase } from "@/lib/supabase";
 import type { OperationAction } from "@/lib/admin/operations";
 import { ConflictReview } from "@/components/admin/ConflictReview";
+import { selectPendingHealthJob } from "@/lib/collector/health";
 
 type Source = { id: string; name: string; base_url: string; adapter: string | null; tier: number; enabled: boolean; disabled_reason: string | null; approved_candidate_id: string | null; health_status: string; failure_count: number; last_error_code: string | null; last_checked_at: string | null };
 type Run = { id: string; started_at: string; status: string; sources_checked: number; sources_failed: number; ai_requests: number; ai_success: number; ai_invalid_schema: number; errors_count: number };
@@ -29,7 +30,7 @@ type Operations = {
     api: { requests: number; errors: number; errorRate: number; averageLatencyMs: number; maxLatencyMs: number; p95UpperMs: number | null };
     databaseErrors24h: number; runtimeEvents24h: number;
     recentEvents: { id: number; event_kind: string; component: string; error_code: string; created_at: string }[];
-    jobs: { id: string; job_name: string; trigger_type: string; status: string; started_at: string; duration_ms: number | null; error_code: string | null }[];
+    jobs: { id: string; job_name: string; trigger_type: string; status: string; started_at: string; finished_at: string | null; duration_ms: number | null; error_code: string | null; counters?: { claimed?: number; failed?: number } }[];
     backlog: { total: number; due: number; oldestDueAt: string | null };
     ai24h: { calls: number; success: number; errors: number; averageLatencyMs: number };
     alerts: { fingerprint: string; rule_name: string; severity: string; status: string; last_seen_at: string; occurrence_count: number }[];
@@ -52,6 +53,7 @@ export default function OperationsPage() {
   const requestGeneration = useRef(0);
   const currentToken = useRef<string | null>(null);
   const sourceOffsets = useRef({ candidateOffset: 0, historyOffset: 0 });
+  const pendingJob = selectPendingHealthJob(data?.observability.jobs.filter((job) => job.job_name === "AI_PENDING") || []);
 
   const load = useCallback(async (accessToken: string) => {
     const generation = ++requestGeneration.current;
@@ -139,7 +141,8 @@ export default function OperationsPage() {
     {notice && token && <p role="status" className="mt-4 rounded-xl bg-cyan-500/10 p-4 text-cyan-100">{notice}</p>}
     {loading ? <p role="status" className="mt-8">Carregando acesso…</p> : !token ? <section className={`${box} mt-8`}><p>Entre com uma conta administradora para acessar o painel.</p><Link href="/conta" className="mt-3 inline-block underline">Entrar</Link></section> : forbidden ? <p role="alert" className="mt-8">Acesso restrito a administradores.</p> : data ? <div className="mt-8 space-y-6">
       <div className="grid gap-4 md:grid-cols-3">
-        <section className={box}><h2 className="font-bold">Saúde do coletor</h2><p className="mt-2 text-2xl">{data.runs[0]?.status || "Sem execução"}</p><p className="text-sm text-white/60">Última execução: {date(data.runs[0]?.started_at)}</p></section>
+        <section className={box}><h2 className="font-bold">Coleta das fontes</h2><p className="mt-2 text-2xl">{data.runs[0]?.status || "Sem execução"}</p><p className="text-sm text-white/60">Última execução: {date(data.runs[0]?.started_at)}</p></section>
+        <section className={box}><h2 className="font-bold">Worker de IA</h2><p className="mt-2 text-2xl">{pendingJob?.status || "Sem processamento"}</p><p className="text-sm text-white/60">Última execução com documentos: {date(pendingJob?.started_at)} · {pendingJob?.counters?.failed || 0} falha(s)</p></section>
         <section className={box}><h2 className="font-bold">Fila de IA</h2><p className="mt-2 text-2xl">{data.counts.aiPending}</p><p className="text-sm text-white/60">Documentos pendentes (até 50 exibidos)</p></section>
         <section className={box}><h2 className="font-bold">Orçamento de IA</h2><p className="mt-2 text-2xl">{data.aiBudget.reserved} / {data.aiBudget.limit}</p><p className="text-sm text-white/60">Reservas em {data.aiBudget.day}; {data.aiFailureCount7d} falhas de IA em 7 dias</p></section>
         <section className={box}><h2 className="font-bold">API em 24h</h2><p className="mt-2 text-2xl">{data.observability.api.requests} requests</p><p className="text-sm text-white/60">{(data.observability.api.errorRate * 100).toFixed(1)}% 5xx · média {data.observability.api.averageLatencyMs} ms · p95 ≤ {data.observability.api.p95UpperMs ?? ">3000"} ms</p></section>

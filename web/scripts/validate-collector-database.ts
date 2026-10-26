@@ -106,6 +106,12 @@ async function main() {
     assert.equal(Number((await db.query<{ salario: number }>("select salario from concursos where id=$1", [formattedResult!.concursoId])).rows[0].salario), 4200, "a quote accepted by validation must also reach atomic persistence");
     const formattedEvidence = (await db.query<{ evidence_text: string }>("select evidence_text from concurso_field_evidence where concurso_id=$1 and field_name='salario'", [formattedResult!.concursoId])).rows;
     assert.ok(formattedEvidence.some((row) => row.evidence_text === JSON.stringify(formattedQuotes)), "independent quotations must remain an auditable list in the persisted evidence");
+    const cancelledRaw = "Instituto Cancelamento Evidenciado. FGV. Torna público o cancelamento do certame.";
+    const cancelledDoc = (await db.query<{ id: string }>("insert into collector_documents(source_id,canonical_url,source_url,title,raw_text,content_hash,status) values($1,'https://conhecimento.fgv.br/concursos/cancelamento2026','https://conhecimento.fgv.br/concursos/cancelamento2026','Instituto Cancelamento Evidenciado Edital 09/2026',$2,md5($2),'PARSED') returning id", [source.id, cancelledRaw])).rows[0];
+    const cancelledResult = await syncConcursoFromDocument(svc, { title: "Instituto Cancelamento Evidenciado Edital 09/2026", rawText: cancelledRaw, canonicalUrl: "https://conhecimento.fgv.br/concursos/cancelamento2026", sourceName: "FGV", documentId: cancelledDoc.id }, { orgao: "Instituto Cancelamento Evidenciado", banca: "FGV", vagas: null, status: "CANCELADO", evidence: { status: "cancelamento do certame" } }, 1);
+    assert.equal((await db.query<{ status: string }>("select status from concursos where id=$1", [cancelledResult!.concursoId])).rows[0].status, "CANCELADO");
+    const statusEvidence = (await db.query<{ value_json: string; evidence_text: string }>("select value_json,evidence_text from concurso_field_evidence where concurso_id=$1 and field_name='status'", [cancelledResult!.concursoId])).rows;
+    assert.ok(statusEvidence.some((row) => row.value_json === "CANCELADO" && row.evidence_text === "cancelamento do certame"), "cancellation must persist its own factual source evidence");
     await db.query("update collector_sources set tier=2 where id=$1", [cebraspe.id]);
     const wrongTier = await cdnDocument("https://cdn.cebraspe.org.br/concursos/EXEMPLO_26/arquivos/wrong-tier.pdf");
     await assert.rejects(syncConcursoFromDocument(svc, wrongTier, cdnExtracted, 1), /EVIDENCE_TIER_MISMATCH/);

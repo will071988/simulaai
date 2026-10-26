@@ -1,18 +1,20 @@
 import { z } from "zod";
+import { createHash } from "node:crypto";
 import { ExtractConcursoSchema, type ExtractConcurso } from "./schemas";
 import { closeSchemaObjects } from "../ai/structured";
 import { extractionSemanticIssues } from "./extractionSemantics";
 import { numericEvidenceMatches, SCHOOLING_EVIDENCE_PATTERNS, type ExtractionEvidenceField } from "./extractionEvidence";
+import { CONTEST_STATUSES, findContestStatusEvidence } from "./contestStatus";
 
-export const EXTRACTION_PROMPT_VERSION = "extract_concurso_v7_1_source_refs";
+export const EXTRACTION_PROMPT_VERSION = "extract_concurso_v7_2_source_refs";
 const FIELDS = ["orgao", "banca", "vagas", "salario", "inscricao_inicio", "inscricao_fim", "prova_data", "cadastro_reserva", "cargos", "escolaridade", "scope", "state_code", "city", "status"] as const;
 const MAX_TEXT = 4000;
 const MAX_SPAN = 640;
 type Excerpt = { id: string; text: string; start: number; end: number };
 const fold = (text: string) => text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
 
-// Minimize over-citation while keeping every asserted value. Search exclusively
-// inside referenced source spans; never drop a fact to make validation pass.
+// Minimize over-citation while keeping every asserted value. The same strict
+// field-specific verifier is used for cited spans and full-source recovery.
 function supportingQuotes(field: ExtractionEvidenceField, value: unknown, candidates: string[]): string[] {
   const claimed = Array.isArray(value) ? value : [value];
   const selected: Array<{ candidate: string; start: number; end: number }> = [];
@@ -23,6 +25,9 @@ function supportingQuotes(field: ExtractionEvidenceField, value: unknown, candid
       let start = -1, end = -1;
       if (field === "vagas" || field === "salario" || field === "cadastro_reserva") {
         const match = numericEvidenceMatches(field, candidate).find((match) => match.value === item);
+        if (match) { start = match.start; end = match.end; }
+      } else if (field === "status" && typeof item === "string") {
+        const match = findContestStatusEvidence(item, candidate);
         if (match) { start = match.start; end = match.end; }
       } else if (typeof item === "string") {
         let pattern: RegExp | undefined;
@@ -38,7 +43,7 @@ function supportingQuotes(field: ExtractionEvidenceField, value: unknown, candid
           const match = pattern.exec(candidate);
           if (match) { start = match.index; end = start + match[0].length; }
         } else {
-          const text = field === "status" ? item.replace(/_/g, " ") : item;
+          const text = item;
           start = fold(candidate).indexOf(fold(text)); end = start + text.length;
         }
       }
@@ -105,15 +110,23 @@ export function buildGroundedExtraction(title: string, rawText: string, sourceNa
   if (!excerpts.length) throw new Error("INVALID_INPUT");
   const reference = z.enum(excerpts.map((item) => item.id) as [string, ...string[]]);
   const evidenceShape = Object.fromEntries(FIELDS.map((field) => [field, z.array(reference).max(excerpts.length).optional()])) as Record<typeof FIELDS[number], z.ZodOptional<z.ZodArray<typeof reference>>>;
-  const wireSchema = ExtractConcursoSchema.omit({ evidence: true }).extend({ evidence: z.object(evidenceShape) });
+  type School = NonNullable<ExtractConcurso["escolaridade"]>[number];
+  const schools = Object.entries(SCHOOLING_EVIDENCE_PATTERNS).filter(([, pattern]) => pattern.test(source)).map(([school]) => school as School);
+  const schoolSchema = schools.length ? z.array(z.enum(schools as [School, ...School[]])).optional() : ExtractConcursoSchema.shape.escolaridade.unwrap().max(0).optional();
+  const statuses = CONTEST_STATUSES.filter((status) => findContestStatusEvidence(status, source));
+  const statusSchema = statuses.length ? z.enum(statuses as [typeof CONTEST_STATUSES[number], ...(typeof CONTEST_STATUSES[number])[]]).nullable() : z.null();
+  const wireSchema = ExtractConcursoSchema.omit({ evidence: true }).extend({ status: statusSchema, escolaridade: schoolSchema, evidence: z.object(evidenceShape) });
   const byId = new Map(excerpts.map((item) => [item.id, item]));
   const decodingIssues: string[] = [];
+  const recoveredFields: string[] = [];
   return {
     decodingIssues,
-    input: { title: title.slice(0, 200), sourceName: sourceName?.slice(0, 100), excerpts: excerpts.map((item) => ({ id: item.id, text: item.text })) },
+    recoveredFields,
+    input: { title: title.slice(0, 200), sourceName: sourceName?.slice(0, 100), sourceHash: createHash("sha256").update(rawText).digest("hex"), excerpts: excerpts.map((item) => ({ id: item.id, text: item.text })) },
     schema: closeSchemaObjects(z.toJSONSchema(wireSchema, { io: "input" })),
     decode(value: unknown): ExtractConcurso {
       decodingIssues.length = 0;
+      recoveredFields.length = 0;
       const parsed = wireSchema.safeParse(value);
       if (!parsed.success) {
         decodingIssues.push(...parsed.error.issues.slice(0, 20).map((issue) => `${issue.path.join(".")}:${issue.code}`));
@@ -124,24 +137,23 @@ export function buildGroundedExtraction(title: string, rawText: string, sourceNa
       for (const field of FIELDS) {
         const ids = wire.evidence[field];
         const fieldValue = wire[field];
+        const present = fieldValue != null && (!Array.isArray(fieldValue) || fieldValue.length > 0);
+        if (!present) continue;
         if (field === "banca" && typeof fieldValue === "string" && fieldValue.toLowerCase() === sourceName?.toLowerCase()) continue;
-        if (!ids?.length) {
-          const value = wire[field];
-          const present = value != null && (!Array.isArray(value) || value.length > 0);
-          const trustedSource = field === "banca" && typeof value === "string" && value.toLowerCase() === sourceName?.toLowerCase();
-          if (present && !trustedSource) { decodingIssues.push(`${field}:MISSING_EVIDENCE_REFERENCE`); throw new Error("INVALID_EVIDENCE_REFERENCE"); }
-          continue;
-        }
-        const spans = [...new Set(ids)].map((id) => byId.get(id)!).sort((a, b) => a.start - b.start);
+        const spans = [...new Set(ids || [])].map((id) => byId.get(id)!).sort((a, b) => a.start - b.start);
         const groups: Array<{ start: number; end: number }> = [];
         for (const span of spans) {
           const previous = groups.at(-1);
           if (previous && span.start <= previous.end + 1) previous.end = span.end;
           else groups.push({ start: span.start, end: span.end });
         }
-        let quotes: string[];
+        let quotes: string[] = [];
         try { quotes = supportingQuotes(field, fieldValue, groups.map((group) => source.slice(group.start, group.end))); }
-        catch { decodingIssues.push(`${field}:UNSUPPORTED_REFERENCED_VALUE`); throw new Error("INVALID_EVIDENCE_REFERENCE"); }
+        catch { /* A model reference is a hint, never proof on its own. */ }
+        if (!quotes.length) {
+          try { quotes = supportingQuotes(field, fieldValue, [source]); recoveredFields.push(field); }
+          catch { decodingIssues.push(`${field}:UNSUPPORTED_SOURCE_VALUE`); throw new Error("INVALID_EVIDENCE_REFERENCE"); }
+        }
         if (!quotes.length) continue;
         if (quotes.length > 4 || quotes.reduce((sum, quote) => sum + quote.length, 0) > MAX_SPAN) { decodingIssues.push(`${field}:EVIDENCE_QUOTE_LIMIT`); throw new Error("INVALID_EVIDENCE_REFERENCE"); }
         // Distant spans stay separate quotes. Never invent a contiguous phrase.

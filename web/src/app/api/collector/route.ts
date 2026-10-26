@@ -4,7 +4,7 @@ import { runCollector } from "@/lib/collector/pipeline";
 import { isCronAuthorized } from "@/lib/collector/cronAuth";
 import { acquireCollectorLock, releaseCollectorLock } from "@/lib/collector/lock";
 import crypto from "crypto";
-import { deriveCollectorHealth } from "@/lib/collector/health";
+import { deriveCollectorHealth, selectPendingHealthJob } from "@/lib/collector/health";
 import { refreshOperationalAlerts } from "@/lib/observability/alerts";
 import { boundedNumber, finishOperationalJob, observeApiRoute, startOperationalJob } from "@/lib/observability/operations";
 
@@ -28,17 +28,19 @@ async function handleGET(req: Request) {
 
   // public minimal status (no secrets)
   if (!wantRun) {
-    const [{ data: lastRun, error: runError }, { count: pendingAI, error: pendingError }, { data: sources, error: sourcesError }] = await Promise.all([
+    const [{ data: lastRun, error: runError }, { count: pendingAI, error: pendingError }, { data: sources, error: sourcesError }, aiJobs] = await Promise.all([
       svc.from("collector_runs").select("started_at,finished_at,status,sources_checked,sources_success,sources_failed,documents_new,documents_unchanged,ai_pending,errors_count,parsed_success,parse_failed").order("started_at", { ascending: false }).limit(1).maybeSingle(),
       svc.from("collector_documents").select("id", { count: "exact", head: true }).eq("status", "AI_PENDING"),
       svc.from("collector_sources").select("health_status,failure_count").eq("enabled", true),
+      svc.from("ops_job_runs").select("status,started_at,finished_at,counters").eq("job_name", "AI_PENDING").order("started_at", { ascending: false }).limit(10),
     ]);
-    if (runError || pendingError || sourcesError) return NextResponse.json({ ok: false, error: "COLLECTOR_HEALTH_QUERY_FAILED" }, { status: 503 });
+    if (runError || pendingError || sourcesError || aiJobs.error) return NextResponse.json({ ok: false, error: "COLLECTOR_HEALTH_QUERY_FAILED" }, { status: 503 });
+    const lastPendingJob = selectPendingHealthJob(aiJobs.data || []);
     const healthy = sources?.filter((s) => s.health_status === "HEALTHY").length ?? 0;
     const degraded = sources?.filter((s) => s.health_status === "DEGRADED").length ?? 0;
     const failed = sources?.filter((s) => s.health_status === "FAILED").length ?? 0;
     const failureThreshold = boundedNumber(process.env.MAX_CONSECUTIVE_SOURCE_FAILURES, 3, 1, 100);
-    const status = deriveCollectorHealth({ lastRun, sourcesHealthy: healthy, sourcesDegraded: degraded, sourcesFailed: failed, sourceFailureThresholdExceeded: Boolean(sources?.some((source) => (source.failure_count || 0) >= failureThreshold)), pendingAI: pendingAI ?? 0, maxPendingAI: boundedNumber(process.env.MAX_PENDING_AI_ALERT, 20, 1, 100000), maxParseFailureRate: boundedNumber(process.env.MAX_PARSE_FAILURE_RATE, 0.25, 0, 1) });
+    const status = deriveCollectorHealth({ lastRun, lastPendingJob, sourcesHealthy: healthy, sourcesDegraded: degraded, sourcesFailed: failed, sourceFailureThresholdExceeded: Boolean(sources?.some((source) => (source.failure_count || 0) >= failureThreshold)), pendingAI: pendingAI ?? 0, maxPendingAI: boundedNumber(process.env.MAX_PENDING_AI_ALERT, 20, 1, 100000), maxParseFailureRate: boundedNumber(process.env.MAX_PARSE_FAILURE_RATE, 0.25, 0, 1) });
     return NextResponse.json({
       ok: true,
       status,
@@ -48,6 +50,7 @@ async function handleGET(req: Request) {
       sourcesDegraded: degraded,
       sourcesFailed: failed,
       pendingAI: pendingAI ?? 0,
+      aiWorkerStatus: lastPendingJob?.status || "UNKNOWN",
     }, { status: status === "FAILED" ? 503 : 200, headers: { "Cache-Control": "no-store" } });
   }
 

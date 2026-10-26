@@ -61,15 +61,20 @@ O client OpenRouter valida a credencial uma vez por instância da execução ant
 
 #### Correção do coletor: referências verificáveis (v7)
 
-A extração atual usa `extract_concurso_v7_1_source_refs`. Em vez de redigitar
+A extração atual usa `extract_concurso_v7_2_source_refs`. Em vez de redigitar
 citações de PDF, o modelo aponta IDs de trechos selecionados no servidor. O input
 é limitado a aproximadamente 4 mil caracteres JSON de fonte, com diversidade de
 campos: tabelas de salário não devem esconder calendários de inscrição posteriores
 ao antigo prefixo de 4 mil caracteres. O schema de transporte só admite os IDs
 efetivamente enviados; referências desconhecidas e valores sem suporte são rejeitados.
 
-O servidor reconstrói provas literais mínimas exclusivamente dos trechos citados,
-preservando todos os fatos afirmados. Cargos em pontos diferentes ficam em uma
+O servidor busca provas literais mínimas primeiro nos trechos citados. Se a
+referência do modelo for incompleta, o mesmo verificador determinístico de campo
+pode recuperar a prova no documento original, registrando `groundingRecoveredFields`.
+Referências inexistentes continuam rejeitadas e nenhum valor afirmado é apagado
+ou substituído para forçar aprovação. Um hash do texto completo integra a chave
+de cache, inclusive quando a alteração está fora dos trechos selecionados.
+Cargos em pontos diferentes ficam em uma
 lista de citações, sem inventar uma frase unindo trechos distantes. O formato
 canônico aceita a string legada ou até quatro citações, com limite total de 640
 caracteres por campo na nova extração. Over-citação é reduzida à prova do valor;
@@ -92,6 +97,16 @@ A seleção reserva espaço para a declaração acadêmica real (incluindo bacha
 e licenciatura), em vez de tratar uma seção genérica “comprovação de requisitos”
 como prova de escolaridade. As condições e alternativas permanecem no trecho
 literal citado; a categoria registra apenas o grau explicitamente presente.
+
+`CANCELADO` é um desfecho explícito do certame, com evidência própria persistida.
+Cancelamento de inscrição individual, negação ou mera possibilidade de
+cancelamento não autoriza esse status. O cancelamento não é convertido em
+“encerrado” para contornar a validação.
+
+Os health checks consideram também o último processamento significativo do worker
+de IA. Um ciclo de coleta de fontes bem-sucedido, ou um job de IA sem documentos,
+não mascara um processamento degradado. O painel separa “Coleta das fontes” de
+“Worker de IA”; a contagem da fila, sozinha, não comprova saúde da extração.
 
 O cliente real validou, antes da publicação desta revisão, o edital da CGU que
 falhava anteriormente: OpenRouter Dots, HTTP 200, schema/semântica aprovados,

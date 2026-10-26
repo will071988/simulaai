@@ -3,6 +3,7 @@ import { buildGroundedExtraction, validateStoredExtraction } from "../src/lib/co
 import { extractionSemanticIssues } from "../src/lib/collector/extractionSemantics";
 import { isLiteralExtractionEvidence } from "../src/lib/collector/extractionEvidence";
 import { ExtractConcursoSchema } from "../src/lib/collector/schemas";
+import { resolveEvidencedContestStatus, canTransitionContestStatus } from "../src/lib/collector/contestStatus";
 
 const title = "Instituto Exemplo";
 const raw = "Instituto Exemplo. Cebraspe. São 12 vagas. Remuneração:\nR$ 4.200,00. Cargo: Analista Administrativo. UF: AL.";
@@ -15,8 +16,12 @@ assert.ok(decoded.evidence?.salario?.includes("Remuneração: R$ 4.200,00"));
 assert.equal(isLiteralExtractionEvidence("salario", decoded.evidence?.salario, raw, 4200), true);
 assert.throws(() => grounded.decode({ orgao: title, banca: "Cebraspe", vagas: 12, status: null, evidence: { vagas: ["E999999"] } }));
 assert.throws(() => grounded.decode({ orgao: title, banca: "Cebraspe", vagas: 12, status: null, evidence: { vagas: "São 12 vagas" } }));
-assert.throws(() => grounded.decode({ orgao: title, banca: "Cebraspe", vagas: 12, status: null, evidence: {} }), /INVALID_EVIDENCE_REFERENCE/);
-assert.throws(() => grounded.decode({ orgao: title, banca: "Cebraspe", vagas: 12, status: null, evidence: { orgao: [first], vagas: [] } }), /INVALID_EVIDENCE_REFERENCE/, "a non-null value cannot hide behind an empty reference list");
+const recovered = grounded.decode({ orgao: title, banca: "Cebraspe", vagas: 12, status: null, evidence: {} });
+assert.deepEqual(extractionSemanticIssues(recovered, title, raw, "Cebraspe"), []);
+assert.ok(grounded.recoveredFields.includes("orgao") && grounded.recoveredFields.includes("vagas"), "source recovery must be observable and produce actual literal proof");
+assert.throws(() => grounded.decode({ orgao: title, banca: "Cebraspe", vagas: 999, status: null, evidence: { orgao: [first], vagas: [] } }), /INVALID_EVIDENCE_REFERENCE/, "recovery must never drop or overwrite an unsupported non-null value");
+assert.throws(() => grounded.decode({ orgao: "Órgão inventado", banca: "Cebraspe", vagas: null, status: null, evidence: {} }), /INVALID_EVIDENCE_REFERENCE/);
+assert.throws(() => grounded.decode({ orgao: title, banca: "Cebraspe", vagas: null, status: null, escolaridade: ["SUPERIOR"], evidence: { orgao: [first], escolaridade: [first] } }), /INVALID_MODEL_OUTPUT/, "the transport must not offer unproven academic qualifications to the model");
 const absent = grounded.decode({ orgao: title, banca: "Cebraspe", vagas: null, status: null, evidence: { orgao: [first], vagas: [], status: [], irrelevant_extra: [] } });
 assert.equal(absent.evidence?.vagas, undefined); assert.equal(absent.evidence?.status, undefined); assert.equal("irrelevant_extra" in (absent.evidence || {}), false);
 assert.throws(() => buildGroundedExtraction(title, " \n\t ", "Cebraspe"), /INVALID_INPUT/);
@@ -55,8 +60,33 @@ assert.deepEqual(extractionSemanticIssues(multipleRoles, title, roleRaw, "Cebras
 const forgedRole = { orgao: title, banca: "Cebraspe", vagas: null, status: null, cargos: ["Analista Administrativo"], evidence: { cargos: ["Cargo: Analista", "Departamento Administrativo"] } };
 assert.ok(extractionSemanticIssues(forgedRole, title, "Instituto Exemplo. Cargo: Analista. Uma informação separada. Departamento Administrativo.", "Cebraspe").includes("cargos:UNSUPPORTED_ROLE"));
 assert.ok(extractionSemanticIssues({ orgao: "Tribunal Superior Exemplo", banca: "Cebraspe", vagas: null, status: null, escolaridade: ["SUPERIOR"], evidence: { escolaridade: "Tribunal Superior Exemplo" } }, "Tribunal Superior Exemplo", "Tribunal Superior Exemplo. Cebraspe.", "Cebraspe").includes("escolaridade:UNSUPPORTED_LEVEL"), "institution names must not become proof of an academic qualification");
+const cancellation = "Instituto Exemplo. Cebraspe. Torna público o cancelamento do certame.";
+const cancellationProof = buildGroundedExtraction(title, cancellation, "Cebraspe");
+const cancellationId = cancellationProof.input.excerpts[0].id;
+const cancelled = cancellationProof.decode({ orgao: title, banca: "Cebraspe", vagas: null, status: "CANCELADO", evidence: { orgao: [cancellationId], status: [cancellationId] } });
+assert.deepEqual(extractionSemanticIssues(cancelled, title, cancellation, "Cebraspe"), []);
+assert.equal(resolveEvidencedContestStatus({ value: "cancelamento", evidence: cancelled.evidence?.status, rawText: cancellation, sourceTier: 1 }), "CANCELADO");
+assert.equal(resolveEvidencedContestStatus({ value: "CANCELADO", evidence: cancelled.evidence?.status, rawText: cancellation, sourceTier: 2 }), null);
+const entireAct = "Instituto Exemplo. Processo seletivo simplificado. CANCELAMENTO DO EDITAL Nº 98/2026. Torna público o cancelamento do Edital nº 98/2026, de 17 de agosto de 2026, e suas alterações, bem como das inscrições realizadas no âmbito do processo seletivo de que trata o referido edital.";
+const act = buildGroundedExtraction(title, entireAct, "Cebraspe");
+const cancelledAct = act.decode({ orgao: title, banca: "Cebraspe", vagas: null, status: "CANCELADO", evidence: { orgao: [act.input.excerpts[0].id], status: [act.input.excerpts[0].id] } });
+assert.equal(resolveEvidencedContestStatus({ value: "CANCELADO", evidence: cancelledAct.evidence?.status, rawText: entireAct, sourceTier: 1 }), "CANCELADO");
+assert.ok(act.recoveredFields.includes("status"), "the complete cancellation act must be verified, rather than trusting an incomplete heading reference");
+for (const phrase of ["Cancelamento da inscrição de um candidato no concurso.", "Não houve cancelamento do certame.", "Possibilidade de cancelamento do certame."]) {
+  assert.equal(resolveEvidencedContestStatus({ value: "CANCELADO", evidence: phrase, rawText: phrase, sourceTier: 1 }), null, "individual, negated or hypothetical cancellations cannot cancel the contest");
+}
+for (const [value, evidence] of [["RESULTADO", "Resultado final da análise de isenção da taxa de inscrição."], ["PREVISTO", "Cronograma previsto no edital."], ["ENCERRADO", "Período de inscrição encerrado."], ["AUTORIZADO", "O candidato está autorizado a entrar."]]) {
+  assert.equal(resolveEvidencedContestStatus({ value, evidence, rawText: evidence, sourceTier: 1 }), null, "a stage/candidate statement must not become the lifecycle status of the entire contest");
+}
+assert.equal(resolveEvidencedContestStatus({ value: "RESULTADO", evidence: "Resultado final do concurso público.", rawText: "Resultado final do concurso público.", sourceTier: 1 }), "RESULTADO");
+assert.equal(canTransitionContestStatus("INSCRICOES_ABERTAS", "CANCELADO", { sourceTier: 1, hasEvidence: true }), true);
+assert.equal(canTransitionContestStatus("CANCELADO", "INSCRICOES_ABERTAS", { sourceTier: 1, hasEvidence: true }), false);
 const escaped = buildGroundedExtraction(title.repeat(100), '"\\'.repeat(5000), "Cebraspe");
 assert.ok(JSON.stringify(escaped.input).length < 5000, "escaped PDF text must not truncate the input JSON at the adapter boundary");
+const unchangedSelection = `${raw} ${"Texto sem informações adicionais. ".repeat(400)}`;
+const sourceA = buildGroundedExtraction(title, `${unchangedSelection} Fim A.`, "Cebraspe");
+const sourceB = buildGroundedExtraction(title, `${unchangedSelection} Fim B.`, "Cebraspe");
+assert.deepEqual(sourceA.input.excerpts, sourceB.input.excerpts); assert.notEqual(sourceA.input.sourceHash, sourceB.input.sourceHash, "unselected source changes must invalidate the extraction cache too");
 assert.equal(validateStoredExtraction(decoded, title, raw, "Cebraspe").success, true);
 const invalidStored = validateStoredExtraction({ ...decoded, evidence: { vagas: "citação inventada" } }, title, raw, "Cebraspe");
 assert.equal(invalidStored.success, false); assert.ok(invalidStored.issues.includes("vagas:NON_LITERAL_EVIDENCE"), "invalid stored AI data must not suppress a fresh extraction forever");

@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ExtractConcurso } from "./schemas";
-import { isLiteralExtractionEvidence, extractionEvidenceQuotes, serializeExtractionEvidence } from "./extractionEvidence";
+import { isLiteralExtractionEvidence, serializeExtractionEvidence } from "./extractionEvidence";
 
 function normalizeOrgao(v: string | null): string | null {
   if (!v) return null;
@@ -102,7 +102,7 @@ export async function syncConcursoFromDocument(
     cargos: deterministic.cargos.length ? deterministic.cargos : aiValue("cargos", extracted.cargos) || [],
     escolaridade: deterministic.escolaridade.length ? deterministic.escolaridade : aiValue("escolaridade", extracted.escolaridade) || [],
   };
-  const evidencedStatus = resolveEvidencedContestStatus({ value: extracted.status, evidence: extractionEvidenceQuotes(aiEvidence.status).find((quote) => normalizeText(quote).includes(normalizeText(extracted.status || "").replace(/_/g, " "))), rawText, sourceTier: tier });
+  const evidencedStatus = resolveEvidencedContestStatus({ value: extracted.status, evidence: aiEvidence.status, rawText, sourceTier: tier });
   const hot = calcHotScoreWithReasons({ status: evidencedStatus, vagas: values.vagas, salario: values.salario, prova_data: values.prova_data, inscricao_inicio: values.inscricao_inicio, inscricao_fim: values.inscricao_fim, tier });
   const identity = extractIdentitySignals({ title: doc.identityTitle || doc.title, url: doc.contestUrl || doc.canonicalUrl, rawText: doc.rawText, sourceName: doc.sourceName, orgao, banca, cargos: values.cargos, escolaridade: values.escolaridade });
   const incomingAliases = [...aliasesFromIdentity(identity, doc.sourceName, doc.canonicalUrl), ...aliasesFromText(`${doc.title}\n${doc.rawText || ""}`, doc.sourceName, doc.canonicalUrl)];
@@ -183,6 +183,7 @@ export async function syncConcursoFromDocument(
     { field: "titulo", value: doc.title.slice(0, 200), evidence: doc.title, confidence: 0.9 },
     ...deterministic.evidence,
   ];
+  if (evidencedStatus && hasLiteralEvidence("status")) evidence.push({ field: "status", value: evidencedStatus, evidence: serializeExtractionEvidence(aiEvidence.status)!, confidence: 0.9 });
   for (const [field, snippet] of Object.entries(aiEvidence)) {
     const value = (values as Record<string, unknown>)[field];
     if (value != null && hasLiteralEvidence(field as keyof typeof aiEvidence)) evidence.push({ field, value, evidence: serializeExtractionEvidence(snippet)!, confidence: 0.65 });

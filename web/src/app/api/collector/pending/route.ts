@@ -84,6 +84,7 @@ async function handlePending(triggerType: "CRON" | "MANUAL", limit: 1 | 5, provi
       const reusable = stored.success;
       if (stored.issues.length) meta.ai_stored_extraction_issues = stored.issues;
       const res = reusable ? null : await extractConcursoWithAI(identityTitle, d.raw_text || "", budget, sourceName);
+      if (res) meta.ai_grounding_recovered_fields = res.groundingRecoveredFields || [];
       if (reusable || (res?.ok && res.data)) {
         const parsed = reusable && stored.success ? stored : ExtractConcursoSchema.safeParse(res?.data);
         if (!parsed.success) {

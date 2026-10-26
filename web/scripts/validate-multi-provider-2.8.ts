@@ -62,6 +62,9 @@ async function main() {
     for (let index = 0; index < 2; index++) assert.equal((await generateWithFallback(request, { budget: rejectedFacts.budget }, rejectedFacts.deps)).errorCode, "SCHEMA_SEMANTIC_ERROR");
     assert.equal((await generateWithFallback(request, { budget: rejectedFacts.budget }, rejectedFacts.deps)).ok, true);
     assert.equal(rejectedFacts.physicalCount(), 3, "two rejected documents must not open the provider outage circuit");
+    const rejectedCredential = fixture({ openrouter: ["AUTH_CONFIGURATION_ERROR", ""] }); globalThis.fetch = rejectedCredential.fetch;
+    for (let index = 0; index < 2; index++) assert.equal((await generateWithFallback(request, { budget: rejectedCredential.budget }, rejectedCredential.deps)).errorCode, "AUTH_CONFIGURATION_ERROR");
+    assert.equal(rejectedCredential.physicalCount(), 1, "an authentication failure must not consume another generation for each document in the same run");
     const ordered = fixture({ openrouter: [""], groq: [""] }, ["groq", "openrouter", "groq"]); globalThis.fetch = ordered.fetch;
     assert.equal((await generateWithFallback(request, { budget: ordered.budget }, ordered.deps)).provider, "groq");
     const missing = fixture({ unavailable: [""], groq: [""] }); missing.deps.configured = () => false; globalThis.fetch = missing.fetch;

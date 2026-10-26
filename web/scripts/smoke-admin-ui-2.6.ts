@@ -41,7 +41,8 @@ async function main() {
     assert.equal(navigation?.status(), 200, "admin page did not load");
     assert.equal((await apiResponse).status(), 200, "authenticated browser API request failed");
     await page.getByRole("heading", { name: "Operações", exact: true }).waitFor();
-    await page.getByText("Saúde do coletor", { exact: true }).waitFor();
+    await page.getByText("Coleta das fontes", { exact: true }).waitFor();
+    await page.getByText("Worker de IA", { exact: true }).waitFor();
     await page.getByText("Fila de IA", { exact: true }).waitFor();
     await page.getByText("Ações recentes", { exact: true }).waitFor();
     await page.getByText("API em 24h", { exact: true }).waitFor();
@@ -52,7 +53,7 @@ async function main() {
     await page.getByText("Retry indisponível", { exact: true }).first().waitFor();
     const body = await page.locator("body").innerText();
     assert.doesNotMatch(body, /Entre com uma conta administradora|Acesso restrito a administradores/);
-    console.log(JSON.stringify({ ok: true, pageStatus: 200, authenticatedApiStatus: 200, renderedSections: ["Saúde do coletor", "Fila de IA", "Ações recentes", "API em 24h", "Backlog devido", "Jobs e crons", "Alertas operacionais", "Erros de runtime/banco"], permanentRetryDisabled: true }, null, 2));
+    console.log(JSON.stringify({ ok: true, pageStatus: 200, authenticatedApiStatus: 200, renderedSections: ["Coleta das fontes", "Worker de IA", "Fila de IA", "Ações recentes", "API em 24h", "Backlog devido", "Jobs e crons", "Alertas operacionais", "Erros de runtime/banco"], permanentRetryDisabled: true }, null, 2));
     await context.close();
   } finally {
     await browser.close();
