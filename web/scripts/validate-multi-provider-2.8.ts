@@ -41,7 +41,7 @@ function fixture(errors: Record<string, string[]>, order = Object.keys(errors), 
 async function main() {
   const originalFetch = globalThis.fetch;
   try {
-    for (const error of ["TIMEOUT", "EMPTY_BODY", "INVALID_JSON", "429", "HTTP_5XX", "PROVIDER_UNAVAILABLE"]) {
+    for (const error of ["TIMEOUT", "EMPTY_BODY", "INVALID_JSON", "INVALID_SCHEMA", "429", "HTTP_5XX", "PROVIDER_UNAVAILABLE"]) {
       const f = fixture({ openrouter: [error], groq: [""] }); globalThis.fetch = f.fetch;
       const result = await generateWithFallback(request, { budget: f.budget, validate: (data) => ExtractConcursoSchema.safeParse(data).success }, f.deps);
       assert.equal(result.ok, true); assert.equal(result.provider, "groq"); assert.equal(result.effectiveModel, "groq/effective");
@@ -52,9 +52,12 @@ async function main() {
       const result = await generateWithFallback(request, { budget: f.budget }, f.deps);
       assert.equal(result.ok, false); assert.deepEqual(f.calls, ["openrouter"]);
     }
-    const semantic = fixture({ openrouter: [""], groq: [""] }); globalThis.fetch = semantic.fetch;
-    assert.equal((await generateWithFallback(request, { budget: semantic.budget, validate: () => false }, semantic.deps)).errorCode, "INVALID_SCHEMA");
-    assert.deepEqual(semantic.calls, ["openrouter"]);
+    const invalidSchema = fixture({ openrouter: [""], groq: [""] }); globalThis.fetch = invalidSchema.fetch;
+    let invalidSchemaValidations = 0;
+    const invalidSchemaResult = await generateWithFallback(request, { budget: invalidSchema.budget, validate: () => ++invalidSchemaValidations > 1 }, invalidSchema.deps);
+    assert.equal(invalidSchemaResult.ok, true);
+    assert.equal(invalidSchemaResult.provider, "groq");
+    assert.deepEqual(invalidSchema.calls, ["openrouter", "groq"]);
     const circuit = fixture({ openrouter: ["EMPTY_BODY", "TIMEOUT"], groq: ["", "", ""] }); globalThis.fetch = circuit.fetch;
     for (let i = 0; i < 3; i++) assert.equal((await generateWithFallback(request, { budget: circuit.budget }, circuit.deps)).ok, true);
     assert.deepEqual(circuit.calls, ["openrouter", "groq", "openrouter", "groq", "groq"]);

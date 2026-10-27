@@ -74,7 +74,7 @@ export function smokeDependencies(provider: string, model?: string): RouterDepen
 type Execution = { providers: Record<string, AIProvider>; failures: Map<string, number>; health: Map<string, "healthy" | "degraded" | "unavailable">; authFailures: Map<string, { httpStatus?: number }> };
 const executions = new WeakMap<GenerationBudget, Execution>();
 export function isFallbackError(code?: string): boolean {
-  return ["TIMEOUT", "EMPTY_BODY", "INVALID_JSON", "429", "HTTP_5XX", "PROVIDER_UNAVAILABLE", "MODEL_UNAVAILABLE"].includes(code || "") || /^HTTP_5\d\d$/.test(code || "");
+  return ["TIMEOUT", "EMPTY_BODY", "INVALID_JSON", "INVALID_SCHEMA", "429", "HTTP_5XX", "PROVIDER_UNAVAILABLE", "MODEL_UNAVAILABLE"].includes(code || "") || /^HTTP_5\d\d$/.test(code || "");
 }
 
 export async function generateWithFallback<T>(req: AIRequest, opts?: { decode?: (d: unknown) => T; validate?: (d: unknown) => boolean; semanticValidate?: (d: unknown) => boolean; budget?: GenerationBudget }, deps: RouterDependencies = dependencies): Promise<AIResult<T> & { degraded?: boolean }> {
