@@ -63,7 +63,7 @@ async function main() {
   const decoded = await scenario({ decode: "success" });
   assert.deepEqual(decoded.cacheValue, { value: "canonical" }); assert.deepEqual(decoded.result.data, decoded.cacheValue); assert.equal(decoded.decodes, 1);
   const decodeFailed = await scenario({ decode: "fail", fallback: true });
-  assert.equal(decodeFailed.result.errorCode, "INVALID_SCHEMA"); assert.equal(decodeFailed.physical, 1); assert.equal(decodeFailed.cacheValue, undefined);
+  assert.equal(decodeFailed.result.errorCode, "INVALID_SCHEMA"); assert.equal(decodeFailed.physical, 2); assert.equal(decodeFailed.cacheValue, undefined);
   assert.doesNotMatch(JSON.stringify(decodeFailed.result), /private decoder/);
   assert.equal((await scenario({ cached: true, decode: "fail" })).decodes, 0, "canonical cache must not be decoded twice");
   const shared = new GenerationBudget(2);
