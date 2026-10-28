@@ -71,13 +71,17 @@ export default function ReleaseReadinessPage() {
 
   useEffect(() => {
     let active = true;
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+    const applySession = (session: { access_token: string } | null) => {
       if (!active) return;
       currentToken.current = session?.access_token || null;
       setToken(session?.access_token || null);
       if (session) void load(session.access_token);
       else { setData(null); setForbidden(false); setLoading(false); }
+    };
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      applySession(session);
     });
+    void supabase.auth.getSession().then(({ data: { session } }) => applySession(session));
     return () => { active = false; currentToken.current = null; listener.subscription.unsubscribe(); };
   }, [load]);
 

@@ -75,7 +75,7 @@ export default function OperationsPage() {
     let active = true;
     const generationRef = requestGeneration;
     const tokenRef = currentToken;
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+    const applySession = (session: { access_token: string } | null) => {
       if (!active) return;
       tokenRef.current = session?.access_token || null;
       setToken(session?.access_token || null);
@@ -84,7 +84,11 @@ export default function OperationsPage() {
       sourceOffsets.current = { candidateOffset: 0, historyOffset: 0 };
       if (session) void load(session.access_token);
       else { generationRef.current++; setForbidden(false); setLoading(false); }
+    };
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      applySession(session);
     });
+    void supabase.auth.getSession().then(({ data: { session } }) => applySession(session));
     return () => { active = false; tokenRef.current = null; generationRef.current++; listener.subscription.unsubscribe(); };
   }, [load]);
 
