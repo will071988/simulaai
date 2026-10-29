@@ -48,6 +48,7 @@
     "smoke:2.6:auth": "tsx scripts/smoke-admin-2.6.ts",
     "smoke:2.6:ui": "tsx scripts/smoke-admin-ui-2.6.ts",
     "test:ai-budget": "tsx scripts/validate-ai-budget.ts",
+    "test:paid-config": "node --env-file=.env.local --import tsx scripts/validate-paid-config.ts",
     "test:paid-fallback": "tsx scripts/validate-paid-fallback.ts",
     "test:publication-policy": "tsx scripts/validate-publication-policy.ts",
     "test:collector-observability": "tsx scripts/validate-collector-observability.ts",

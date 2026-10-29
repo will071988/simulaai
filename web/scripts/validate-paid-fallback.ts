@@ -5,7 +5,7 @@ import { generateWithFallback, type RouterDependencies } from "../src/lib/ai/rou
 import { GenerationBudget } from "../src/lib/ai/generationBudget";
 import type { AIProvider } from "../src/lib/ai/provider";
 
-const request = { taskType: "EXTRACT_CONCURSO" as const, prompt: "fixture", input: { id: "job-1" }, promptVersion: "paid-fallback-fixture", maxTokens: 10 };
+const request = { taskType: "EXTRACT_CONCURSO" as const, prompt: "fixture", input: { id: "job-1" }, promptVersion: "paid-fallback-fixture", maxTokens: 10, schema: { type: "object", properties: { ok: { type: "boolean" } }, required: ["ok"], additionalProperties: false } };
 const originalFetch = globalThis.fetch;
 const original = { policy: aiConfig.policy, freeOnly: aiConfig.freeOnly, models: aiConfig.openaiFallbackModels, calls: aiConfig.openaiMaxCallsPerDay, spend: aiConfig.openaiMaxSpendUsdPerDay, attempts: aiConfig.openaiMaxPaidAttemptsPerJob, pricing: aiConfig.openaiPricing };
 
@@ -17,9 +17,11 @@ class FixtureProvider implements AIProvider {
 
 let paidCalls = 0;
 let paidResponses: Response[] = [];
+const paidBodies: Array<Record<string, any>> = [];
 const logs: Array<Record<string, unknown>> = [];
 let reserved = 0;
 let reserveAllowed = true;
+let dailyAllowed = true;
 const cache = new Map<string, unknown>();
 
 function deps(order: string[], free: Record<string, AIProvider> = {}): RouterDependencies {
@@ -29,7 +31,7 @@ function deps(order: string[], free: Record<string, AIProvider> = {}): RouterDep
     getCached: async <T>(hash: string) => (cache.get(hash) as T | undefined) ?? null,
     setCached: async (hash, _version, _provider, _model, data) => { cache.set(hash, data); },
     logUsage: async (...args: any[]) => { logs.push({ args }); },
-    reserveBudget: async () => true,
+    reserveBudget: async () => dailyAllowed,
     paidBudget: async () => { if (!reserveAllowed) return false; reserved++; return true; },
     openAIKeys: () => [{ key: "fixture-secret-1", index: 1 }, { key: "fixture-secret-2", index: 2 }],
     configured: () => true,
@@ -50,7 +52,7 @@ async function run() {
 
   const success = { ok: true, data: { ok: true }, raw: '{"ok":true}' };
   paidResponses = [new Response(JSON.stringify({ model: "fixture-model", choices: [{ message: { content: '{"ok":true}' } }], usage: { prompt_tokens: 2, completion_tokens: 3, total_tokens: 5 } }), { status: 200 })];
-  globalThis.fetch = async () => { paidCalls++; return paidResponses.shift()!; };
+  globalThis.fetch = async (_input, init) => { paidCalls++; paidBodies.push(JSON.parse(String(init?.body))); return paidResponses.shift()!; };
 
   paidCalls = 0;
   const freeOk = await generateWithFallback(request, { budget: new GenerationBudget(5), validate: (v) => Boolean((v as any)?.ok) }, deps(["groq"], { groq: new FixtureProvider("groq", "free", success) }));
@@ -61,6 +63,10 @@ async function run() {
 
   const paid = await generateWithFallback({ ...request, input: { id: "paid-1" } }, { budget: new GenerationBudget(5), validate: (v) => Boolean((v as any)?.ok) }, deps(["groq"], { groq: new FixtureProvider("groq", "free", { ok: false, errorCode: "HTTP_5XX" }) }));
   assert.equal(paid.ok, true); assert.equal(paid.provider, "openai"); assert.equal(paidCalls, 1); // 3
+  assert.equal(paidBodies[0].max_completion_tokens, 10);
+  assert.equal(paidBodies[0].store, false);
+  assert.equal(paidBodies[0].temperature, undefined);
+  assert.equal(paidBodies[0].response_format.json_schema.strict, true);
 
   aiConfig.policy = "free_only";
   const blocked = await generateWithFallback({ ...request, input: { id: "blocked" } }, { budget: new GenerationBudget(5) }, deps(["groq"], { groq: new FixtureProvider("groq", "free", { ok: false, errorCode: "HTTP_5XX" }) }));
@@ -81,9 +87,14 @@ async function run() {
   const quota = await generateWithFallback({ ...request, input: { id: "quota" } }, { budget: new GenerationBudget(5) }, deps(["groq"], { groq: new FixtureProvider("groq", "free", { ok: false, errorCode: "HTTP_5XX" }) }));
   assert.equal(quota.errorCode, "PAID_QUOTA_EXHAUSTED"); // 8
 
+  globalThis.fetch = async () => { paidCalls++; return new Response(JSON.stringify({ error: { code: "credit_balance_exhausted" } }), { status: 429 }); };
+  const credit = await generateWithFallback({ ...request, input: { id: "credit" } }, { budget: new GenerationBudget(5) }, deps(["groq"], { groq: new FixtureProvider("groq", "free", { ok: false, errorCode: "HTTP_5XX" }) }));
+  assert.equal(credit.errorCode, "PAID_QUOTA_EXHAUSTED"); // 9
+
   globalThis.fetch = async () => { paidCalls++; return new Response("{}", { status: 500 }); };
+  const beforeServer = paidCalls;
   await generateWithFallback({ ...request, input: { id: "server" } }, { budget: new GenerationBudget(5) }, deps(["groq"], { groq: new FixtureProvider("groq", "free", { ok: false, errorCode: "HTTP_5XX" }) }));
-  assert.equal(paidCalls <= 8, true); // 9: bounded, no loop
+  assert.equal(paidCalls <= beforeServer + 2, true); // bounded by the two fixture keys
 
   globalThis.fetch = async () => { paidCalls++; return new Response(JSON.stringify({ choices: [{ message: { content: "not-json" } }] }), { status: 200 }); };
   const invalid = await generateWithFallback({ ...request, input: { id: "invalid" } }, { budget: new GenerationBudget(5) }, deps(["groq"], { groq: new FixtureProvider("groq", "free", { ok: false, errorCode: "HTTP_5XX" }) }));
@@ -93,6 +104,13 @@ async function run() {
   const budgetBlocked = await generateWithFallback({ ...request, input: { id: "budget" } }, { budget: new GenerationBudget(5) }, deps(["groq"], { groq: new FixtureProvider("groq", "free", { ok: false, errorCode: "HTTP_5XX" }) }));
   assert.equal(budgetBlocked.ok, false); assert.equal(reserved > 0, true); // 11
   reserveAllowed = true;
+
+  dailyAllowed = false;
+  const beforeReleaseCalls = paidCalls;
+  const beforeFinancialReservations = reserved;
+  await generateWithFallback({ ...request, input: { id: "preflight-budget" } }, { budget: new GenerationBudget(5) }, deps(["groq"], { groq: new FixtureProvider("groq", "free", { ok: false, errorCode: "HTTP_5XX" }) }));
+  assert.equal(paidCalls, beforeReleaseCalls); assert.equal(reserved, beforeFinancialReservations); // daily permit fails before financial reservation
+  dailyAllowed = true;
 
   const concurrentDeps = deps(["groq"], { groq: new FixtureProvider("groq", "free", { ok: false, errorCode: "HTTP_5XX" }) });
   let concurrentReservations = 0; concurrentDeps.paidBudget = async () => { if (concurrentReservations) return false; concurrentReservations++; return true; };

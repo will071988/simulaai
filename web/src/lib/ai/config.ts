@@ -1,4 +1,5 @@
 export type AIProviderPolicy = "free_only" | "free_then_paid";
+export type OpenAIPricing = { inputPerMillion: number; outputPerMillion: number; cachedInputPerMillion?: number };
 
 export function configuredPolicy(): AIProviderPolicy {
   const explicit = process.env.AI_PROVIDER_POLICY?.trim().toLowerCase();
@@ -6,9 +7,14 @@ export function configuredPolicy(): AIProviderPolicy {
   return process.env.FREE_AI_ONLY === "false" ? "free_then_paid" : "free_only";
 }
 
-function positiveNumber(value: string | undefined, fallback: number): number {
+function nonNegativeNumber(value: string | undefined, fallback: number): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
+function positiveInteger(value: string | undefined, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 export const aiConfig = {
@@ -22,16 +28,22 @@ export const aiConfig = {
   maxPerRun: Number(process.env.MAX_AI_REQUESTS_PER_RUN || 10),
   maxPerDay: Number(process.env.MAX_AI_REQUESTS_PER_DAY || 50),
   openaiFallbackModels: (process.env.OPENAI_FALLBACK_MODELS || process.env.AI_OPENAI_MODEL || "").split(",").map((s) => s.trim()).filter(Boolean),
-  openaiMaxCallsPerDay: positiveNumber(process.env.OPENAI_MAX_CALLS_PER_DAY, 0),
-  openaiMaxSpendUsdPerDay: positiveNumber(process.env.OPENAI_MAX_SPEND_USD_PER_DAY, 0),
-  openaiMaxPaidAttemptsPerJob: positiveNumber(process.env.OPENAI_MAX_PAID_ATTEMPTS_PER_JOB, 1),
+  openaiMaxCallsPerDay: positiveInteger(process.env.OPENAI_MAX_CALLS_PER_DAY, 0),
+  openaiMaxSpendUsdPerDay: nonNegativeNumber(process.env.OPENAI_MAX_SPEND_USD_PER_DAY, 0),
+  openaiMaxPaidAttemptsPerJob: positiveInteger(process.env.OPENAI_MAX_PAID_ATTEMPTS_PER_JOB, 1),
   openaiPricing: (() => {
     try {
       const value = process.env.OPENAI_PRICING_JSON;
-      if (!value) return {} as Record<string, { inputPerMillion: number; outputPerMillion: number }>;
-      const parsed = JSON.parse(value) as Record<string, { inputPerMillion?: number; outputPerMillion?: number }>;
-      return Object.fromEntries(Object.entries(parsed).flatMap(([model, price]) => typeof price.inputPerMillion === "number" && typeof price.outputPerMillion === "number" && Number.isFinite(price.inputPerMillion) && Number.isFinite(price.outputPerMillion) && price.inputPerMillion >= 0 && price.outputPerMillion >= 0 ? [[model, { inputPerMillion: price.inputPerMillion, outputPerMillion: price.outputPerMillion }]] : []));
-    } catch { return {} as Record<string, { inputPerMillion: number; outputPerMillion: number }>; }
+       if (!value) return {} as Record<string, OpenAIPricing>;
+       const parsed = JSON.parse(value) as Record<string, { inputPerMillion?: number; outputPerMillion?: number; cachedInputPerMillion?: number }>;
+       return Object.fromEntries(Object.entries(parsed).flatMap(([model, price]) => {
+         const valid = typeof price?.inputPerMillion === "number" && typeof price.outputPerMillion === "number"
+           && Number.isFinite(price.inputPerMillion) && Number.isFinite(price.outputPerMillion)
+           && price.inputPerMillion >= 0 && price.outputPerMillion >= 0
+           && (price.cachedInputPerMillion === undefined || (typeof price.cachedInputPerMillion === "number" && Number.isFinite(price.cachedInputPerMillion) && price.cachedInputPerMillion >= 0));
+         return valid ? [[model, { inputPerMillion: price.inputPerMillion, outputPerMillion: price.outputPerMillion, ...(price.cachedInputPerMillion === undefined ? {} : { cachedInputPerMillion: price.cachedInputPerMillion }) } as OpenAIPricing]] : [];
+       }));
+     } catch { return {} as Record<string, OpenAIPricing>; }
   })(),
   // allowlist de modelos gratuitos confirmados (FREE_AI_ONLY=true)
   freeAllowed: new Set([
@@ -40,6 +52,14 @@ export const aiConfig = {
     "openrouter/free",
   ]),
 };
+
+export function calculateOpenAICost(usage: { inputTokens: number; outputTokens: number; cachedInputTokens?: number }, price: OpenAIPricing): number | null {
+  const valid = [usage.inputTokens, usage.outputTokens, price.inputPerMillion, price.outputPerMillion].every((value) => Number.isFinite(value) && value >= 0);
+  const cached = usage.cachedInputTokens ?? 0;
+  if (!valid || !Number.isFinite(cached) || cached < 0 || cached > usage.inputTokens || (cached > 0 && price.cachedInputPerMillion === undefined)) return null;
+  const uncachedInput = usage.inputTokens - cached;
+  return (uncachedInput * price.inputPerMillion + cached * (price.cachedInputPerMillion ?? price.inputPerMillion) + usage.outputTokens * price.outputPerMillion) / 1_000_000;
+}
 
 console.info(JSON.stringify({ event: "ai_provider_policy", policy: aiConfig.policy }));
 

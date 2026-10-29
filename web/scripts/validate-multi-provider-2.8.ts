@@ -88,7 +88,7 @@ async function main() {
     assert.equal(getAIRetryDecision("SKIPPED_NOT_CONFIGURED", 2).incrementRetry, false);
   } finally { globalThis.fetch = originalFetch; }
 
-  const names = ["GROQ_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY", "GEMINI_API_KEY", "CEREBRAS_API_KEY", "OPENAI_API_KEY", "AI_OPENAI_MODEL", "AI_GROQ_MODEL", "AI_GEMINI_MODEL", "AI_CEREBRAS_MODEL", "AI_GROQ_FREE_TIER_CONFIRMED", "AI_GEMINI_FREE_TIER_CONFIRMED", "AI_CEREBRAS_FREE_TIER_CONFIRMED"];
+  const names = ["GROQ_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY", "GEMINI_API_KEY", "CEREBRAS_API_KEY", "OPENAI_API_KEY", "AI_OPENAI_MODEL", "AI_GROQ_MODEL", "AI_GEMINI_MODEL", "AI_CEREBRAS_MODEL", "AI_GROQ_FREE_TIER_CONFIRMED", "AI_GEMINI_FREE_TIER_CONFIRMED", "AI_CEREBRAS_FREE_TIER_CONFIRMED", "FREE_AI_ONLY"];
   const previous = Object.fromEntries(names.map((name) => [name, process.env[name]]));
   try {
     for (const name of names) delete process.env[name];
@@ -105,6 +105,14 @@ async function main() {
     assert.equal(openAIRequests, 0);
     assert.equal(providerConfiguration().find((item) => item.provider === "openai")?.status, "BLOCKED_FREE_ONLY");
     assert.doesNotMatch(JSON.stringify(providerConfiguration()), /fixture-only/);
+    const previousFreeOnly = aiConfig.freeOnly;
+    const previousProviderOrder = aiConfig.providerOrder;
+    aiConfig.freeOnly = false;
+    aiConfig.providerOrder = ["openai"];
+    assert.equal((await new OpenAIProvider().healthCheck()).healthy, true);
+    assert.equal(providerConfiguration().find((item) => item.provider === "openai")?.status, "ENABLED");
+    aiConfig.freeOnly = previousFreeOnly;
+    aiConfig.providerOrder = previousProviderOrder;
     for (const providerName of ["groq", "gemini", "cerebras"]) {
       process.env[`AI_${providerName.toUpperCase()}_MODEL`] = "fixture-model";
       process.env[`AI_${providerName.toUpperCase()}_FREE_TIER_CONFIRMED`] = "true";

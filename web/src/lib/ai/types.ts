@@ -34,7 +34,7 @@ export type AIResult<T> = {
   success?: boolean;
   requestedModel?: string;
   generationDiagnostics?: { finishReason: string | null; completionTokens: number | null; reasoningTokens: number | null; visibleTokens: number | null; reasoningPresent: boolean; reasoningBudgetExhausted: boolean };
-  usage?: { inputTokens?: number; outputTokens?: number; totalTokens?: number };
+  usage?: { inputTokens?: number; outputTokens?: number; cachedInputTokens?: number; totalTokens?: number };
   estimatedCostUsd?: number;
   keyIndex?: number;
   attempts?: Array<{ provider: string; requestedModel: string; effectiveModel: string; errorCode?: string; latencyMs: number; keyIndex?: number }>;

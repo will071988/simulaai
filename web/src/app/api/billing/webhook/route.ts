@@ -19,6 +19,10 @@ function unixDate(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? new Date(value * 1000).toISOString() : null;
 }
 
+function stripeObjectId(value: unknown) {
+  return typeof value === "string" && value ? value : value && typeof value === "object" && "id" in value ? asString((value as { id?: unknown }).id) : null;
+}
+
 async function mapCustomer(userId: string, customerId: string | null) {
   if (!customerId) return;
   const { error } = await supabaseService().from("simulaai_billing_customers").upsert({
@@ -66,6 +70,25 @@ async function syncSubscription(object: Record<string, unknown>) {
   if (error) throw new Error("BILLING_SUBSCRIPTION_WRITE_FAILED");
 }
 
+async function markSubscriptionStatus(subscriptionId: string | null, status: string) {
+  if (!subscriptionId) return;
+  const { error } = await supabaseService()
+    .from("simulaai_billing_subscriptions")
+    .update({ status, updated_at: new Date().toISOString() })
+    .eq("stripe_subscription_id", subscriptionId);
+  if (error) throw new Error("BILLING_SUBSCRIPTION_WRITE_FAILED");
+}
+
+async function markPurchaseRefunded(paymentIntentId: string | null, refundStatus?: string | null) {
+  if (!paymentIntentId || ["failed", "canceled"].includes(refundStatus || "")) return;
+  const { error } = await supabaseService()
+    .from("simulaai_billing_purchases")
+    .update({ status: "REFUNDED" })
+    .eq("stripe_payment_intent_id", paymentIntentId)
+    .eq("status", "PAID");
+  if (error) throw new Error("BILLING_PURCHASE_WRITE_FAILED");
+}
+
 async function handlePOST(request: Request) {
   const rawBody = await request.text();
   if (!verifyStripeSignature(rawBody, request.headers.get("stripe-signature"))) {
@@ -108,9 +131,15 @@ async function handlePOST(request: Request) {
     } else if (
       event.type === "customer.subscription.created" ||
       event.type === "customer.subscription.updated" ||
-      event.type === "customer.subscription.deleted"
+      event.type === "customer.subscription.deleted" ||
+      event.type === "customer.subscription.paused" ||
+      event.type === "customer.subscription.resumed"
     ) {
       await syncSubscription(object);
+    } else if (event.type === "invoice.payment_failed" || event.type === "invoice.payment_action_required") {
+      await markSubscriptionStatus(stripeObjectId(object.subscription), event.type === "invoice.payment_failed" ? "past_due" : "incomplete");
+    } else if (event.type === "charge.refunded" || event.type === "refund.created" || event.type === "refund.updated") {
+      await markPurchaseRefunded(stripeObjectId(object.payment_intent), asString(object.status));
     }
 
     const { error: eventError } = await svc.from("simulaai_billing_webhook_events").insert({

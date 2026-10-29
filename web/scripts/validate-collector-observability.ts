@@ -24,4 +24,7 @@ for (const code of ["BUDGET_EXCEEDED", "429", "PROVIDER_DOWN", "PAID_MODEL_BLOCK
   assert.ok(decision.delaySeconds > 0);
 }
 assert.equal(getAIRetryDecision("INVALID_SCHEMA", 2).nextStatus, "FAILED");
+assert.equal(getAIRetryDecision("429", 0, new Date(now), "17").delaySeconds, 17);
+assert.equal(getAIRetryDecision("429", 0, new Date(now), new Date(now + 42000).toUTCString()).delaySeconds, 42);
+assert.equal(getAIRetryDecision("429", 0, new Date(now), "invalid").delaySeconds, 5 * 60);
 console.log("collector observability validation passed");

@@ -47,9 +47,9 @@ async function handlePending(triggerType: "CRON" | "MANUAL", limit: 1 | 5, provi
     let processed = 0;
     const budget = new GenerationBudget(aiConfig.maxPerRun, providerOrder);
     let failed = 0;
-    const scheduleRetry = async (d: Record<string, unknown>, meta: Record<string, unknown>, errorCode: string) => {
+    const scheduleRetry = async (d: Record<string, unknown>, meta: Record<string, unknown>, errorCode: string, retryAfter?: string) => {
       const retry = Number(d.ai_retry_count || 0);
-      const decision = getAIRetryDecision(errorCode, retry);
+      const decision = getAIRetryDecision(errorCode, retry, new Date(), retryAfter);
       const nextAttempt = decision.delaySeconds > 0 ? new Date(Date.now() + decision.delaySeconds * 1000).toISOString() : null;
       let retryUpdate = svc.from("collector_documents").update({
         status: decision.nextStatus,
@@ -88,13 +88,13 @@ async function handlePending(triggerType: "CRON" | "MANUAL", limit: 1 | 5, provi
       if (reusable || (res?.ok && res.data)) {
         const parsed = reusable && stored.success ? stored : ExtractConcursoSchema.safeParse(res?.data);
         if (!parsed.success) {
-          await scheduleRetry(d, meta, "INVALID_SCHEMA");
+          await scheduleRetry(d, meta, "INVALID_SCHEMA", res?.rateLimit?.retryAfter);
           continue;
         }
         const semanticIssues = extractionSemanticIssues(parsed.data, identityTitle, d.raw_text || "", sourceName);
         if (semanticIssues.length) {
           console.info(JSON.stringify({ event: "ai_extraction_semantic_rejection", issues: semanticIssues }));
-          await scheduleRetry(d, { ...meta, ai_semantic_issues: semanticIssues }, "SCHEMA_SEMANTIC_ERROR");
+          await scheduleRetry(d, { ...meta, ai_semantic_issues: semanticIssues }, "SCHEMA_SEMANTIC_ERROR", res?.rateLimit?.retryAfter);
           continue;
         }
         const syncErr = await (async () => {
@@ -104,12 +104,12 @@ async function handlePending(triggerType: "CRON" | "MANUAL", limit: 1 | 5, provi
           } catch (e) { return e instanceof Error ? e.message : "ERR"; }
         })();
         if (syncErr) {
-          await scheduleRetry(d, { ...meta, ai_extracted: parsed.data, ai_provider: res?.provider || meta.ai_provider || "deterministic", sync_error: syncErr }, syncErr === "INSUFFICIENT_IDENTITY" ? syncErr : syncErr.endsWith("_RETRY") || syncErr === "DOCUMENT_VERSION_CHANGED" || syncErr === "DOCUMENT_CLAIM_CHANGED" ? "CONCURRENCY_RETRY" : "SYNC_FAILED");
+           await scheduleRetry(d, { ...meta, ai_extracted: parsed.data, ai_provider: res?.provider || meta.ai_provider || "deterministic", sync_error: syncErr }, syncErr === "INSUFFICIENT_IDENTITY" ? syncErr : syncErr.endsWith("_RETRY") || syncErr === "DOCUMENT_VERSION_CHANGED" || syncErr === "DOCUMENT_CLAIM_CHANGED" ? "CONCURRENCY_RETRY" : "SYNC_FAILED");
           continue;
         }
         processed++;
       } else {
-        await scheduleRetry(d, { ...meta, ai_validation_issues: res?.validationIssues || [], ai_semantic_issues: res?.semanticIssues || [] }, res?.errorCode || "AI_PENDING");
+        await scheduleRetry(d, { ...meta, ai_validation_issues: res?.validationIssues || [], ai_semantic_issues: res?.semanticIssues || [] }, res?.errorCode || "AI_PENDING", res?.rateLimit?.retryAfter);
       }
     }
     const counters = { claimed: (docs || []).length, processed, failed, ai_requests: budget.calls };

@@ -29,6 +29,12 @@ assert.match(webhook, /simulaai_billing_webhook_events/);
 assert.match(webhook, /checkout\.session\.completed/);
 assert.match(webhook, /customer\.subscription\.updated/);
 assert.match(webhook, /firstItem\?\.current_period_end/);
+assert.match(webhook, /invoice\.payment_failed/);
+assert.match(webhook, /invoice\.payment_action_required/);
+assert.match(webhook, /charge\.refunded/);
+assert.match(webhook, /refund\.created/);
+assert.match(webhook, /status: "REFUNDED"/);
+assert.match(webhook, /\? "past_due" : "incomplete"/);
 
 const migration = read("../supabase/migrations/20261009143000_sprint_3_4_billing.sql");
 for (const table of ["simulaai_billing_customers", "simulaai_billing_subscriptions", "simulaai_billing_purchases", "simulaai_billing_webhook_events"]) {

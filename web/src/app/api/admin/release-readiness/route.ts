@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 import { authorizeOperations } from "@/lib/admin/authorize";
 import { supabaseService } from "@/lib/supabase-server";
-import { observeApiRoute } from "@/lib/observability/operations";
+import { boundedNumber, observeApiRoute } from "@/lib/observability/operations";
 import { loadPublishedQuestionPool } from "@/lib/simulados/published-pool";
 import { OpenRouterProvider } from "@/lib/ai/openrouter";
 import { configuredOpenRouterModels, fetchOpenRouterCatalog, approveFreeModel } from "@/lib/ai/openrouterModels";
 import { providerConfiguration } from "@/lib/ai/registry";
+import { deriveCollectorHealth, selectPendingHealthJob } from "@/lib/collector/health";
 
 export const dynamic = "force-dynamic";
 const noStore = { "Cache-Control": "private, no-store" };
@@ -26,14 +27,30 @@ async function handleGET(request: Request) {
   }
 
   const svc = supabaseService();
-  const [pending, claims, degradedSources] = await Promise.all([
+  const [pending, claims, degradedSources, latestRun, pendingJobs, sourceHealth] = await Promise.all([
     svc.from("collector_documents").select("id", { count: "exact", head: true }).eq("status", "AI_PENDING"),
     svc.from("collector_documents").select("id", { count: "exact", head: true }).not("ai_claimed_at", "is", null),
     svc.from("collector_sources").select("id", { count: "exact", head: true }).eq("enabled", true).neq("health_status", "HEALTHY"),
+    svc.from("collector_runs").select("started_at,finished_at,status,errors_count,parsed_success,parse_failed").order("started_at", { ascending: false }).limit(1).maybeSingle(),
+    svc.from("ops_job_runs").select("status,started_at,finished_at,counters").eq("job_name", "AI_PENDING").order("started_at", { ascending: false }).limit(10),
+    svc.from("collector_sources").select("health_status,failure_count").eq("enabled", true),
   ]);
-  if ([pending, claims, degradedSources].some((item) => item.error)) {
+  if ([pending, claims, degradedSources, latestRun, pendingJobs, sourceHealth].some((item) => item.error)) {
     return reply({ ok: false, error: "RELEASE_READINESS_QUERY_FAILED" }, 503);
   }
+
+  const activeSources = sourceHealth.data || [];
+  const collectorHealth = deriveCollectorHealth({
+    lastRun: latestRun.data,
+    lastPendingJob: selectPendingHealthJob(pendingJobs.data || []),
+    sourcesHealthy: activeSources.filter((source) => source.health_status === "HEALTHY").length,
+    sourcesDegraded: activeSources.filter((source) => source.health_status === "DEGRADED").length,
+    sourcesFailed: activeSources.filter((source) => source.health_status === "FAILED").length,
+    sourceFailureThresholdExceeded: activeSources.some((source) => (source.failure_count || 0) >= boundedNumber(process.env.MAX_CONSECUTIVE_SOURCE_FAILURES, 3, 1, 100)),
+    pendingAI: pending.count || 0,
+    maxPendingAI: boundedNumber(process.env.MAX_PENDING_AI_ALERT, 20, 1, 100000),
+    maxParseFailureRate: boundedNumber(process.env.MAX_PARSE_FAILURE_RATE, 0.25, 0, 1),
+  });
 
   const paymentLinks = [
     process.env.STRIPE_PAYMENT_LINK_PREMIUM_MONTHLY,
@@ -73,7 +90,7 @@ async function handleGET(request: Request) {
 
   const gates = {
     productionRuntime: process.env.VERCEL_ENV === "production",
-    collectorBacklog: (pending.count || 0) <= 20,
+    collectorBacklog: (pending.count || 0) <= 20 && collectorHealth === "HEALTHY",
     noActiveClaims: (claims.count || 0) === 0,
     sourcesHealthy: (degradedSources.count || 0) === 0,
     billingConfigured: stripeConfigured,
@@ -95,6 +112,7 @@ async function handleGET(request: Request) {
       gates,
       snapshot: {
         aiPending: pending.count || 0,
+        collectorHealth,
         activeClaims: claims.count || 0,
         degradedSources: degradedSources.count || 0,
         stripeLivemode: bool(process.env.STRIPE_LIVEMODE),
